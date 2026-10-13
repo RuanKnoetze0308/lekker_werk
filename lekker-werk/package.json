@@ -1,0 +1,47 @@
+{
+  "name": "lekker-werk",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "telegram:poll": "node --conditions=react-server --import tsx scripts/telegram-poll.ts",
+    "demo:seed": "node --conditions=react-server --import tsx scripts/demo/seed.ts",
+    "demo:clean": "node --conditions=react-server --import tsx scripts/demo/clean.ts",
+    "test": "vitest run",
+    "attendance:recompute": "node --conditions=react-server --import tsx scripts/recompute-attendance.ts",
+    "test:integration": "node -e \"process.env.INTEGRATION=1;require('child_process').execSync('vitest run tests/',{stdio:'inherit',env:process.env})\""
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.0",
+    "lucide-react": "^1.46.0",
+    "next": "16.3.5",
+    "pg": "^8.16.0",
+    "qrcode": "^1.5.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.15.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.5",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.6",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}
