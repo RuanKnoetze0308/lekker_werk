@@ -25,7 +25,8 @@ export type RejectionReasonCode =
   | "SUBSCRIPTION_INACTIVE"
   | "CREDENTIAL_UNKNOWN"
   | "DEVICE_DISABLED"
-  | "TIMESTAMP_OUT_OF_RANGE";
+  | "TIMESTAMP_OUT_OF_RANGE"
+  | "PERIOD_LOCKED";
 
 /**
  * How the person clocking proved who they are. Each kind has one resolver in identity.ts.

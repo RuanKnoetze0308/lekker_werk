@@ -53,7 +53,7 @@ Source of truth: `server/auth/permissions.ts`.
 | Billing | `subscriptions`, `payments` | PayFast. |
 | System | `company_settings`, `employee_data_permissions`, `audit_logs`, `notifications`, `rate_limits`, `demo_data_registry` (development only) | |
 
-Schema source: `db/schema/*.ts`. Extra SQL: `db/sql/001_immutable_clock_events.sql`.
+Schema source: `db/schema/*.ts`. Migrations: `db/migrations/` (the baseline also creates the `clock_events` immutability trigger and a `uuidv7()` fallback for PostgreSQL < 18).
 
 ---
 

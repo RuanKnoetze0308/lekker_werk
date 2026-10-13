@@ -154,3 +154,22 @@ export async function resolveDaySchedule(
     overtimeAfterMinutes: schedule.overtimeAfterMinutesPerDay,
   };
 }
+
+/** Name of the schedule an employee follows today (assignment, else location, else company default). */
+export async function currentScheduleName(ctx: AuthContext, employeeId: string, today: string) {
+  const [assigned] = await db
+    .select({ name: workSchedules.name })
+    .from(employeeSchedules)
+    .innerJoin(workSchedules, eq(workSchedules.id, employeeSchedules.scheduleId))
+    .where(
+      and(
+        eq(employeeSchedules.employeeId, employeeId),
+        eq(employeeSchedules.companyId, ctx.companyId),
+        lte(employeeSchedules.effectiveFrom, today),
+        or(isNull(employeeSchedules.effectiveTo), gte(employeeSchedules.effectiveTo, today)),
+      ),
+    )
+    .orderBy(desc(employeeSchedules.effectiveFrom))
+    .limit(1);
+  return assigned?.name ?? null;
+}

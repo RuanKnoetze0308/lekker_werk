@@ -12,7 +12,7 @@ export default async function CompanySettingsPage() {
   const [company, locations] = await Promise.all([getCompany(ctx), listLocations(ctx, { includeInactive: true })]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <Card title="Company details" className="lg:col-span-2">
         <CompanyForm
           company={{

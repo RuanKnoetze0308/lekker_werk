@@ -17,6 +17,9 @@ import {
   Clock,
   CreditCard,
   Nfc,
+  Palmtree,
+  TriangleAlert,
+  Wallet,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 
@@ -28,6 +31,9 @@ const ICONS = {
   locations: MapPin,
   qr: QrCode,
   devices: Nfc,
+  leave: Palmtree,
+  exceptions: TriangleAlert,
+  payroll: Wallet,
   integrations: Plug,
   reports: BarChart3,
   billing: CreditCard,

@@ -35,6 +35,7 @@ export default async function EditEmployeePage({ params }: { params: Promise<{ i
             preferredChannel: e.preferredChannel ?? "",
             platformIdentifier: e.platformIdentifier ?? "",
             extraLocationIds: extraLocations.map((l) => l.locationId).filter((l) => l !== e.locationId),
+            hiredOn: e.hiredOn ?? "",
           }}
         />
       </Card>

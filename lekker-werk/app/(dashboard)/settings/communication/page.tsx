@@ -26,7 +26,7 @@ export default async function CommunicationSettingsPage() {
 
   return (
     <>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {tg && (
           <Card title={`Telegram${tg.isDefault ? " · default" : ""}`}>
             <ChannelForm channel="TELEGRAM" state={tg} />

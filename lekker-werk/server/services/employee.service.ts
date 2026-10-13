@@ -137,7 +137,7 @@ export async function createEmployee(ctx: AuthContext, input: z.infer<typeof emp
   return db.transaction(async (tx) => {
     const [emp] = await tx
       .insert(employees)
-      .values({ ...fields, companyId: ctx.companyId, hiredOn: new Date().toISOString().slice(0, 10) })
+      .values({ ...fields, companyId: ctx.companyId, hiredOn: fields.hiredOn ?? new Date().toISOString().slice(0, 10) })
       .returning();
     const locs = [emp.locationId, ...extraLocationIds.filter((l) => l !== emp.locationId)];
     await tx.insert(employeeLocations).values(

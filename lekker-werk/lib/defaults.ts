@@ -1,6 +1,13 @@
 import type { CompanySettingsShape } from "@/db/schema/system";
 
 export const DEFAULT_COMPANY_SETTINGS: CompanySettingsShape = {
+  payroll: {
+    frequency: "MONTHLY",
+    monthStartDay: 1,
+    anchorDate: "2026-01-05", // a Monday
+    defaultWeeklyMinutes: 45 * 60,
+    defaultDaysPerWeek: 5,
+  },
   attendance: {
     mealBreak: { policy: "AUTO_DEDUCT", minutes: 60, afterMinutes: 300, paid: false },
     gpsValidationEnabled: false,

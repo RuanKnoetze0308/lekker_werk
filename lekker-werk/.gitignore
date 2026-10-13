@@ -43,3 +43,6 @@ next-env.d.ts
 
 # demo seed: generated local test login
 /scripts/demo/.demo-login.json
+
+# database exports contain personal data and password hashes
+/db/exports/

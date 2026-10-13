@@ -19,6 +19,7 @@ export interface EmployeeFormValues {
   preferredChannel: string;
   platformIdentifier: string;
   extraLocationIds: string[];
+  hiredOn: string;
 }
 
 export function EmployeeForm({
@@ -46,6 +47,7 @@ export function EmployeeForm({
     preferredChannel: initial?.preferredChannel ?? "",
     platformIdentifier: initial?.platformIdentifier ?? "",
     extraLocationIds: initial?.extraLocationIds ?? [],
+    hiredOn: initial?.hiredOn ?? "",
   });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +104,9 @@ export function EmployeeForm({
       </Field>
       <Field label="Phone" error={fe.phone}>
         <Input type="tel" value={v.phone} onChange={(e) => set("phone", e.target.value)} />
+      </Field>
+      <Field label="Start date" hint="Leave builds up from this date." error={fe.hiredOn}>
+        <Input type="date" value={v.hiredOn} onChange={(e) => set("hiredOn", e.target.value)} />
       </Field>
       <Field label="Department">
         <Input value={v.department} onChange={(e) => set("department", e.target.value)} />

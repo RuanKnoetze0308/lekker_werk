@@ -83,11 +83,11 @@ export default async function DevicesPage() {
         <div className="flex flex-col gap-3 text-sm text-muted">
           <p>
             Terminals send each tap to{" "}
-            <code className="rounded bg-soft-surface px-1.5 py-0.5 text-ink">
+            <code className="break-all rounded bg-soft-surface px-1.5 py-0.5 text-ink">
               POST {env.appUrl}/api/device/v1/punches
             </code>{" "}
             with the header{" "}
-            <code className="rounded bg-soft-surface px-1.5 py-0.5 text-ink">
+            <code className="break-all rounded bg-soft-surface px-1.5 py-0.5 text-ink">
               Authorization: Bearer &lt;device key&gt;
             </code>
             . A device that was offline sends its stored taps in one batch, with the time each one happened.

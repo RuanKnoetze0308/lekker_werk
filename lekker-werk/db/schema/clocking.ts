@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -55,7 +56,7 @@ export const qrCodes = pgTable(
 );
 
 // Immutable audit trail. Rows are inserted, never updated or deleted
-// (enforced by trigger in db/sql/001_immutable_clock_events.sql).
+// (enforced by a trigger created in db/migrations/0000_baseline.sql).
 // Attendance is *derived* from these rows.
 export const clockEvents = pgTable(
   "clock_events",
@@ -145,6 +146,14 @@ export const attendanceRecords = pgTable(
     overtimeMinutes: integer("overtime_minutes").notNull().default(0),
     lateMinutes: integer("late_minutes").notNull().default(0),
     earlyDepartureMinutes: integer("early_departure_minutes").notNull().default(0),
+    // Approved leave on this day (full or part day) and its type.
+    leaveMinutes: integer("leave_minutes").notNull().default(0),
+    leaveTypeId: uuid("leave_type_id"),
+    // The day is a public holiday (worked hours on it are paid as holiday work).
+    publicHoliday: boolean("public_holiday").notNull().default(false),
+    // Scheduled minutes lost to a site closure, and whether the company pays them.
+    closureMinutes: integer("closure_minutes").notNull().default(0),
+    closurePaid: boolean("closure_paid").notNull().default(false),
     status: attendanceStatus("status").notNull().default("PRESENT"),
     updatedAt: updatedAt(),
   },
@@ -216,5 +225,12 @@ export const publicHolidays = pgTable(
     name: text("name").notNull(),
     startsAt: time("starts_at"),
   },
-  (t) => [index("public_holidays_date_idx").on(t.companyId, t.holidayDate)],
+  (t) => [
+    index("public_holidays_date_idx").on(t.companyId, t.holidayDate),
+    // One national (company_id null) or company-specific holiday per date.
+    uniqueIndex("public_holidays_company_date_uq").on(
+      sql`coalesce(${t.companyId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      t.holidayDate,
+    ),
+  ],
 );

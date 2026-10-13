@@ -29,6 +29,7 @@ import type { LoginInput, SignupInput } from "@/lib/schemas/auth";
 import { AppError, Errors } from "../errors";
 import { audit } from "./audit.service";
 import { createTrial } from "../billing/billing.service";
+import { ensureLeaveTypes } from "../time/leave.service";
 import { sendEmail } from "./notification.service";
 import { createSession } from "../auth/session";
 
@@ -86,6 +87,7 @@ export async function signup(input: SignupInput) {
 
     // 7-day free trial starts now; the dates are stored and enforced by the billing module.
     await createTrial(tx, company.id);
+    await ensureLeaveTypes(company.id, tx);
 
     // Both channels exist from day one (disabled) so the admin can switch later.
     await tx.insert(communicationChannels).values(

@@ -18,6 +18,8 @@ export const employeeSchema = z.object({
   preferredChannel: z.enum(["WHATSAPP", "TELEGRAM"]).optional().nullable(),
   platformIdentifier: optionalText(120),
   extraLocationIds: z.array(z.uuid()).max(50).default([]),
+  /** Start date: drives leave accrual. Defaults to today for new employees. */
+  hiredOn: z.union([z.literal(""), z.iso.date()]).optional().nullable().transform((v) => v || undefined),
 });
 
 export const employeeUpdateSchema = employeeSchema.partial();

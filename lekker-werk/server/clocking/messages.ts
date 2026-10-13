@@ -21,6 +21,7 @@ export const REJECTION_MESSAGES: Record<RejectionReasonCode, string> = {
   CREDENTIAL_UNKNOWN: "Card or PIN not recognised. Please see your manager.",
   DEVICE_DISABLED: "This clock terminal is disabled.",
   TIMESTAMP_OUT_OF_RANGE: "The device clock is out of range. Please check the terminal's date and time.",
+  PERIOD_LOCKED: "That day's hours are already closed for payroll. Please ask your manager to correct your time.",
 };
 
 export const ACTION_VERB: Record<ClockAction, string> = {

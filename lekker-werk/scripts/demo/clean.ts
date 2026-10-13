@@ -33,6 +33,8 @@ async function main() {
   const W = arr(ids("work_schedule"));
   const R = arr(ids("integration_request"));
   const U = arr(ids("user"));
+  const P = arr(ids("pay_period"));
+  const C = arr(ids("site_closure"));
   const chats = ids("chat").map((c) => c.split(":")[1]);
   const all = reg.map((r) => r.entity_id);
 
@@ -43,6 +45,13 @@ async function main() {
     };
     await tx.execute(sql`alter table clock_events disable trigger clock_events_immutable`);
 
+    await run("pay period lines", sql`delete from pay_period_lines where employee_id = any(${E}) or pay_period_id = any(${P})`);
+    await run("payroll exports", sql`delete from pay_exports where pay_period_id = any(${P})`);
+    await run("pay periods", sql`delete from pay_periods where id = any(${P})`);
+    await run("leave ledger", sql`delete from leave_ledger where employee_id = any(${E})`);
+    await run("leave requests", sql`delete from leave_requests where employee_id = any(${E})`);
+    await run("employment terms", sql`delete from employment_terms where employee_id = any(${E})`);
+    await run("site closures", sql`delete from site_closures where id = any(${C}) or location_id = any(${L})`);
     await run("clock attempts", sql`delete from clock_attempts where employee_id = any(${E}) or location_id = any(${L}) or device_id = any(${D}) or qr_code_id = any(${Q})`);
     await run("break records", sql`delete from break_records where employee_id = any(${E})`);
     await run("attendance records", sql`delete from attendance_records where employee_id = any(${E}) or location_id = any(${L})`);

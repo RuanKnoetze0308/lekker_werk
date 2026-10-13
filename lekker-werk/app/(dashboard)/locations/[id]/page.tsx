@@ -9,6 +9,8 @@ import { getLocation, listLocationManagers } from "@/server/services/location.se
 import { listManagerUsers } from "@/server/services/user.service";
 import { listQrCodes } from "@/server/services/qr.service";
 import { LocationSettingsForm, ManagersForm } from "../_components/LocationForms";
+import { ClosuresPanel } from "../_components/ClosuresPanel";
+import { listClosures } from "@/server/time/closures.service";
 
 export default async function LocationDetailPage({
   params,
@@ -24,18 +26,19 @@ export default async function LocationDetailPage({
   const date = p.get("date") ?? localDate(new Date(), loc.timezone);
 
   const canDash = can(ctx.role, "dashboard:view");
-  const [roster, assigned, managers, qrs] = await Promise.all([
+  const [roster, assigned, managers, qrs, closures] = await Promise.all([
     canDash ? getLocationDay(ctx, id, date) : [],
     listLocationManagers(ctx, id),
     can(ctx.role, "users:manage") ? listManagerUsers(ctx) : Promise.resolve([]),
     can(ctx.role, "qr:manage") ? listQrCodes(ctx, id) : Promise.resolve([]),
+    listClosures(ctx, id),
   ]);
 
   return (
     <>
       <PageHeader title={loc.name} description={loc.address ?? undefined} />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card title="Settings" className="lg:col-span-2">
           <LocationSettingsForm
             canEdit={can(ctx.role, "locations:write")}
@@ -62,6 +65,9 @@ export default async function LocationDetailPage({
             ) : (
               <p className="text-sm text-muted">No managers assigned.</p>
             )}
+          </Card>
+          <Card title="Site closures">
+            <ClosuresPanel locationId={id} closures={closures} canManage={can(ctx.role, "attendance:correct")} />
           </Card>
           {can(ctx.role, "qr:manage") && (
             <Card title="QR codes" action={<Link href="/qr-codes" className="text-xs font-medium text-dark-green">Manage</Link>}>

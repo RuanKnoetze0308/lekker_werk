@@ -17,6 +17,9 @@
  *   - one live WhatsApp clock-in right now, through the full conversation flow
  *   - an integration request
  *   - a demo admin login (password written to scripts/demo/.demo-login.json, git-ignored)
+ *   - working hours (incl. a salaried employee), leave balances from realistic start dates,
+ *     approved leave, a sick report sent through chat, a load-shedding closure, the Heritage
+ *     Day public holiday, and the previous pay period locked and exported
  */
 import { loadEnv } from "../_env";
 
@@ -85,6 +88,13 @@ async function main() {
   const { recomputeDay } = await import("@/server/services/attendance.service");
   const { createIntegrationRequest } = await import("@/server/services/integration-request.service");
   const { createUser } = await import("@/server/services/user.service");
+  const { getSettings } = await import("@/server/services/company.service");
+  const { periodContaining, previousPeriod } = await import("@/lib/pay-periods");
+  const { setTerms } = await import("@/server/time/terms.service");
+  const { listLeaveTypes, requestLeaveAsManager, runLeaveAccruals } = await import("@/server/time/leave.service");
+  const { createClosure } = await import("@/server/time/closures.service");
+  const { ensureNationalHolidays, holidaysBetween } = await import("@/server/time/holidays.service");
+  const { exportPayPeriod, listPayPeriods, lockPayPeriod } = await import("@/server/time/payroll.service");
   const { randomToken } = await import("@/lib/crypto");
   const { writeFileSync } = await import("node:fs");
   type AuthContext = import("@/server/auth/context").AuthContext;
@@ -126,13 +136,21 @@ async function main() {
     db.insert(S.demoDataRegistry).values({ entityType, entityId, companyId: company.id });
 
   const tz = company.timezone;
-  const days = Number(arg("days") ?? 28);
   const today = localDate(new Date(), tz);
-  const firstDay = addDays(today, -days);
+  // Default: from the start of the previous pay period, so that period can be locked complete.
+  const { payroll } = await getSettings(company.id);
+  const firstDay = arg("days") ? addDays(today, -Number(arg("days"))) : previousPeriod(periodContaining(today, payroll), payroll).start;
   const random = rng(20261010);
   const between = (a: number, b: number) => a + Math.round(random() * (b - a));
   const chance = (p: number) => random() < p;
   console.log(`Seeding demo data for ${company.name} (${firstDay} → ${today})`);
+
+  // Demo history starts before sign-up, so attendance tracking starts with it.
+  const { updateAttendanceSettings } = await import("@/server/services/company.service");
+  const current = await getSettings(company.id);
+  if (!current.attendance.trackFrom || current.attendance.trackFrom > firstDay) {
+    await updateAttendanceSettings(ctx, { ...current.attendance, trackFrom: firstDay });
+  }
 
   // ---- Locations ----------------------------------------------------------------------------
   const existing = await listLocations(ctx);
@@ -213,8 +231,18 @@ async function main() {
       department: p.dept,
       position: p.position,
       preferredChannel: p.method === "WHATSAPP" ? "WHATSAPP" : p.method === "TELEGRAM" ? "TELEGRAM" : null,
+      // Spread start dates over ~3 years so leave balances look like a real business.
+      hiredOn: addDays(today, -between(120, 1100)),
     }));
     await track("employee", row.id);
+    // Contracts: shop works a 6-day 45h week, warehouse 45h, depot 40h; the admin officer is salaried.
+    await setTerms(ctx, row.id, {
+      effectiveFrom: firstDay,
+      payType: p.first === "Chantel" ? "SALARIED" : "HOURLY",
+      contractedMinutesPerWeek: (p.site === "DEPOT" ? 40 : 45) * 60,
+      daysPerWeek: p.site === "SHOP" || p.schedule === "WH_LATE" ? 6 : 5,
+      overtimeEligible: p.first !== "Chantel",
+    });
     await assignSchedule(ctx, { employeeId: row.id, scheduleId: schedules[p.schedule].id, effectiveFrom: firstDay });
     const emp: Emp = { ...p, id: row.id };
 
@@ -235,6 +263,22 @@ async function main() {
   }
   console.log(`  ${emps.length} employees, 3 QR codes, 2 devices, cards/PINs and chat links`);
 
+  // ---- Planned leave, closures and holidays (no clock-ins on those days) ----------------------
+  await ensureNationalHolidays([Number(today.slice(0, 4)), Number(today.slice(0, 4)) + 1]);
+  const holidays = await holidaysBetween(company.id, firstDay, today);
+  // Annual leave last week (Wed-Thu) and family responsibility the week before.
+  const lastWeekWed = addDays(today, -((isoWeekday(today) + 4) % 7) - 7);
+  const plannedLeave = [
+    { who: "Ayesha", code: "ANNUAL", start: lastWeekWed, end: addDays(lastWeekWed, 1) },
+    { who: "Johan", code: "FAMILY", start: addDays(lastWeekWed, -7), end: addDays(lastWeekWed, -7) },
+  ];
+  const onLeave = (e: { first: string }, d: string) => plannedLeave.some((l) => l.who === e.first && d >= l.start && d <= l.end);
+  // Load-shedding closed the depot for a day, 8 days ago (unless that was a weekend).
+  let closureDay = addDays(today, -8);
+  while (isoWeekday(closureDay) > 5) closureDay = addDays(closureDay, -1);
+  // Pieter reports sick today through Telegram (no clock-ins today).
+  const SICK_TODAY = "Pieter";
+
   // ---- Shifts -------------------------------------------------------------------------------
   type Action = "CLOCK_IN" | "CLOCK_OUT" | "BREAK_START" | "BREAK_END";
   interface Punch { at: Date; emp: Emp; action: Action }
@@ -245,6 +289,10 @@ async function main() {
   for (let d = firstDay; d <= today; d = addDays(d, 1)) {
     for (const e of emps) {
       if (e.first === LIVE_EMPLOYEE && d === today) continue;
+      if (e.first === SICK_TODAY && d === today) continue;
+      if (onLeave(e, d)) continue;
+      if (e.site === "DEPOT" && d === closureDay) continue;
+      if (holidays.has(d) && e.site !== "SHOP") continue; // the shop trades on public holidays
       const plan = scheduleDays[e.schedule].find((x) => x.day === isoWeekday(d));
       if (!plan || chance(0.04)) continue; // day off / absent
       const start = parseHHmm(plan.start);
@@ -328,6 +376,34 @@ async function main() {
     for (let d = firstDay; d <= today; d = addDays(d, 1)) await recomputeDay(db, e.id, d);
   }
 
+  // ---- Leave, closure, sick report through chat ------------------------------------------------
+  const types = await listLeaveTypes(ctx);
+  for (const l of plannedLeave) {
+    const e = emps.find((x) => x.first === l.who)!;
+    await requestLeaveAsManager(ctx, {
+      employeeId: e.id,
+      leaveTypeId: types.find((t) => t.code === l.code)!.id,
+      startDate: l.start,
+      endDate: l.end,
+      dayFraction: 1,
+      reason: l.code === "FAMILY" ? "Child in hospital" : "Family trip",
+      documentRef: null,
+      approve: true,
+    });
+  }
+  const closure = await createClosure(ctx, site.DEPOT, {
+    startDate: closureDay,
+    endDate: closureDay,
+    paid: true,
+    reason: "Load-shedding stage 6, no generator (demo)",
+  });
+  await track("site_closure", closure.id);
+  const pieter = emps.find((e) => e.first === SICK_TODAY)!;
+  const sick = await simulateChat(ctx, { channel: "TELEGRAM", externalId: pieter.chatId!, text: "SICK" });
+  console.log(`  ${pieter.first} reported sick via Telegram: ${sick.replies[0]?.text.split("\n")[0]}`);
+  const accrued = await runLeaveAccruals(company.id, today);
+  console.log(`  leave: 2 approved, 1 sick report pending, ${accrued} balance entries built from start dates`);
+
   // ---- Live: a full WhatsApp conversation, right now -----------------------------------------
   const live = emps.find((e) => e.first === LIVE_EMPLOYEE)!;
   const scan = await simulateChat(ctx, { channel: "WHATSAPP", externalId: live.chatId!, scanQrId: qr.DEPOT.id });
@@ -345,6 +421,16 @@ async function main() {
     notes: "Demo request created by the seed script.",
   });
   await track("integration_request", req.id);
+
+  // ---- Previous pay period locked and exported, so payroll history has something in it ------
+  const periods = await listPayPeriods(ctx);
+  const previous = periods.find((p) => p.endDate < today && p.endDate >= firstDay && p.status === "OPEN");
+  if (previous) {
+    await lockPayPeriod(ctx, previous.id, { force: true, note: "Demo: locked with sample exceptions left in." });
+    await exportPayPeriod(ctx, previous.id, "lines");
+    await track("pay_period", previous.id);
+    console.log(`  pay period ${previous.startDate} to ${previous.endDate} locked and exported`);
+  }
 
   // ---- Demo admin login (for walkthroughs and automated UI checks; removed by demo:clean) -----
   const login = { email: `demo-admin+${company.id.slice(0, 8)}@demo.lekkerwerk.test`, password: randomToken(18) };

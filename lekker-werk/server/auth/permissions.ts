@@ -11,6 +11,8 @@ export const PERMISSIONS = [
   "locations:write",
   "qr:manage",
   "devices:manage",
+  "leave:approve",
+  "payroll:manage",
   "integrations:manage",
   "reports:read",
   "settings:manage",
@@ -31,12 +33,16 @@ const manager: Permission[] = [
   "locations:read",
   "qr:manage",
   "reports:read",
+  "leave:approve",
 ];
 
 const companyAdmin: Permission[] = [
   ...manager,
   "locations:write",
   "devices:manage",
+  "payroll:manage",
+  "leave:approve",
+  "payroll:manage",
   "integrations:manage",
   "settings:manage",
   "users:manage",

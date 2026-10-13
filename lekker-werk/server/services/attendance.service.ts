@@ -18,6 +18,7 @@ import {
   attendanceRecords,
   breakRecords,
   clockAttempts,
+  companies,
   clockDevices,
   clockEvents,
   employees,
@@ -28,7 +29,9 @@ import type { attendanceQuery, correctionSchema } from "@/lib/schemas/workforce"
 import { addDays, dayRangeUtc, localDate } from "@/lib/time";
 import { assertCan, assertLocationAccess, type AuthContext } from "../auth/context";
 import { Errors } from "../errors";
-import { buildShifts, summariseDay } from "../attendance/derive";
+import { buildShifts, classifyDay, summariseDay } from "../attendance/derive";
+import { loadDayContext } from "../time/day-context";
+import { assertDatesOpen } from "../time/period-lock";
 import { audit } from "./audit.service";
 import { getSettings } from "./company.service";
 import { resolveDaySchedule } from "./schedule.service";
@@ -48,13 +51,24 @@ export async function recomputeDay(
       companyId: employees.companyId,
       locationId: employees.locationId,
       timezone: locations.timezone,
+      hiredOn: employees.hiredOn,
+      deactivatedOn: employees.deactivatedOn,
+      companyCreatedAt: companies.createdAt,
     })
     .from(employees)
     .innerJoin(locations, eq(locations.id, employees.locationId))
+    .innerJoin(companies, eq(companies.id, employees.companyId))
     .where(eq(employees.id, employeeId));
   if (!emp) return;
 
   const settings = (await getSettings(emp.companyId)).attendance;
+  // Nothing is "scheduled" outside employment or before the company started tracking attendance,
+  // so those days never become absences.
+  const trackFrom = settings.trackFrom ?? localDate(emp.companyCreatedAt, emp.timezone);
+  const employed =
+    workDate >= trackFrom &&
+    (!emp.hiredOn || workDate >= emp.hiredOn) &&
+    (!emp.deactivatedOn || workDate <= emp.deactivatedOn);
   const [start, end] = dayRangeUtc(workDate, emp.timezone);
   const horizon = new Date(end.getTime() + 24 * 3600_000);
 
@@ -88,10 +102,24 @@ export async function recomputeDay(
     mealBreak: settings.mealBreak,
   });
 
-  if (!summary) {
-    await executor
-      .delete(attendanceRecords)
+  // Leave, public holidays and closures decide days that weren't (fully) worked.
+  const outcome = classifyDay({
+    summary,
+    schedule: employed ? schedule : null,
+    mealBreakPaid: settings.mealBreak.paid,
+    ...(await loadDayContext(emp.companyId, employeeId, emp.locationId, workDate, executor)),
+    dayIsOver: workDate < localDate(now, emp.timezone),
+  });
+
+  if (!outcome) {
+    const existing = await executor
+      .select({ id: attendanceRecords.id })
+      .from(attendanceRecords)
       .where(and(eq(attendanceRecords.employeeId, employeeId), eq(attendanceRecords.workDate, workDate)));
+    for (const r of existing) {
+      await executor.delete(breakRecords).where(eq(breakRecords.attendanceRecordId, r.id));
+      await executor.delete(attendanceRecords).where(eq(attendanceRecords.id, r.id));
+    }
     return;
   }
 
@@ -101,16 +129,15 @@ export async function recomputeDay(
     employeeId,
     locationId: firstEvent?.locationId ?? emp.locationId,
     workDate,
-    firstClockIn: summary.firstClockIn,
-    lastClockOut: summary.lastClockOut,
-    workedMinutes: summary.workedMinutes,
-    breakMinutes: summary.breakMinutes,
-    autoBreakMinutes: summary.autoBreakMinutes,
-    scheduledMinutes: summary.scheduledMinutes,
-    overtimeMinutes: summary.overtimeMinutes,
-    lateMinutes: summary.lateMinutes,
-    earlyDepartureMinutes: summary.earlyDepartureMinutes,
-    status: summary.status,
+    firstClockIn: summary?.firstClockIn ?? null,
+    lastClockOut: summary?.lastClockOut ?? null,
+    workedMinutes: summary?.workedMinutes ?? 0,
+    breakMinutes: summary?.breakMinutes ?? 0,
+    autoBreakMinutes: summary?.autoBreakMinutes ?? 0,
+    overtimeMinutes: summary?.overtimeMinutes ?? 0,
+    lateMinutes: summary?.lateMinutes ?? 0,
+    earlyDepartureMinutes: summary?.earlyDepartureMinutes ?? 0,
+    ...outcome,
   };
   const [record] = await executor
     .insert(attendanceRecords)
@@ -313,6 +340,7 @@ export async function createCorrection(ctx: AuthContext, input: z.infer<typeof c
   if (!emp) throw Errors.notFound("Employee");
   assertLocationAccess(ctx, emp.locationId);
   if (input.occurredAt.getTime() > Date.now() + 60_000) throw Errors.invalid("Correction cannot be in the future.");
+  await assertDatesOpen(ctx.companyId, localDate(input.occurredAt, emp.timezone));
 
   if (input.correctsEventId) {
     const [orig] = await db

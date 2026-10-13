@@ -17,6 +17,7 @@ import { getSettings } from "../services/company.service";
 import { recomputeDay } from "../services/attendance.service";
 import { notify } from "../services/notification.service";
 import { resolveQrToken } from "../services/qr.service";
+import { findLockedPeriod } from "../time/period-lock";
 import { resolveIdentity } from "./identity";
 import { ACTION_VERB, REJECTION_MESSAGES } from "./messages";
 import type {
@@ -215,6 +216,10 @@ export async function processClock(req: ClockRequest): Promise<ClockResult> {
     return logRejection({ ...ctxRej, reason: "NOT_ALLOWED_AT_LOCATION" });
   }
 
+  // Payroll for this day is final (only reachable by a device replaying an old offline buffer).
+  const day = localDate(occurredAt, location.timezone);
+  if (await findLockedPeriod(req.companyId, day, day)) return logRejection({ ...ctxRej, reason: "PERIOD_LOCKED" });
+
   // ---- GPS (phones only: a fixed device's position is already known) ------------------------
   let distance: number | null = null;
   const gpsOn = location.gpsValidationEnabled ?? settings.gpsValidationEnabled;
@@ -311,7 +316,6 @@ export async function processClock(req: ClockRequest): Promise<ClockResult> {
         .where(eq(employeeCredentials.id, who.credentialId));
     }
 
-    const day = localDate(occurredAt, location.timezone);
     await recomputeDay(tx, employee.id, day, now);
     await recomputeDay(tx, employee.id, addDays(day, -1), now);
 

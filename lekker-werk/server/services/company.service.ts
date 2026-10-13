@@ -13,6 +13,7 @@ import { encryptJson } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import type { z } from "zod";
 import type {
+  payrollSettingsSchema,
   attendanceSettingsSchema,
   channelConfigSchema,
   companyUpdateSchema,
@@ -78,6 +79,7 @@ export async function getSettings(companyId: string): Promise<CompanySettingsSha
     .where(eq(companySettings.companyId, companyId));
   const stored = row?.settings?.attendance;
   return {
+    payroll: { ...DEFAULT_COMPANY_SETTINGS.payroll, ...(row?.settings?.payroll ?? {}) },
     attendance: {
       ...DEFAULT_COMPANY_SETTINGS.attendance,
       ...(stored ?? {}),
@@ -87,12 +89,13 @@ export async function getSettings(companyId: string): Promise<CompanySettingsSha
   };
 }
 
-export async function updateAttendanceSettings(
+/** Replaces one section of the settings document, keeping the others as they are. */
+async function saveSettingsSection<K extends keyof CompanySettingsShape>(
   ctx: AuthContext,
-  input: z.infer<typeof attendanceSettingsSchema>,
+  section: K,
+  value: CompanySettingsShape[K],
 ) {
-  assertCan(ctx, "settings:manage");
-  const next: CompanySettingsShape = { attendance: input };
+  const next: CompanySettingsShape = { ...(await getSettings(ctx.companyId)), [section]: value };
   await db
     .insert(companySettings)
     .values({ companyId: ctx.companyId, settings: next, updatedBy: ctx.userId })
@@ -100,7 +103,21 @@ export async function updateAttendanceSettings(
       target: companySettings.companyId,
       set: { settings: next, updatedBy: ctx.userId },
     });
-  await audit(ctx, "settings.changed", "company_settings", ctx.companyId, { section: "attendance" });
+  await audit(ctx, "settings.changed", "company_settings", ctx.companyId, { section });
+}
+
+export async function updateAttendanceSettings(
+  ctx: AuthContext,
+  input: z.infer<typeof attendanceSettingsSchema>,
+) {
+  assertCan(ctx, "settings:manage");
+  await saveSettingsSection(ctx, "attendance", input);
+}
+
+/** Changing frequency only affects periods that haven't been created yet (see payroll.service). */
+export async function updatePayrollSettings(ctx: AuthContext, input: z.infer<typeof payrollSettingsSchema>) {
+  assertCan(ctx, "settings:manage");
+  await saveSettingsSection(ctx, "payroll", input);
 }
 
 // ---- Employee self-service data permissions -------------------------------------------

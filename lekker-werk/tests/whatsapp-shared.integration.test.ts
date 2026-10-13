@@ -26,7 +26,9 @@ let qrToken = "";
 let channelBefore: { enabled: boolean; config: Record<string, unknown> } | null = null;
 const replies: string[] = [];
 
-function inbound(id: string, message: Record<string, unknown>) {
+type Payload = Parameters<typeof handleWhatsAppWebhook>[0];
+
+function inbound(id: string, message: Record<string, unknown>): Payload {
   return {
     entry: [
       {
@@ -35,7 +37,7 @@ function inbound(id: string, message: Record<string, unknown>) {
             value: {
               metadata: { phone_number_id: "TEST_SHARED_NUMBER" },
               contacts: [{ wa_id: WA_ID, profile: { name: "Fatima" } }],
-              messages: [{ id, from: WA_ID, ...message }],
+              messages: [{ id, from: WA_ID, type: "text", ...message }],
             },
           },
         ],
@@ -115,9 +117,7 @@ describe.skipIf(!acct)("shared WhatsApp number (demo data)", () => {
 
   it("answers strangers on the shared number without touching any company", async () => {
     replies.length = 0;
-    await handleWhatsAppWebhook({
-      entry: [{ changes: [{ value: { metadata: { phone_number_id: "TEST_SHARED_NUMBER" }, messages: [{ id: `wamid.x.${Date.now()}`, from: "27999999999", type: "text", text: { body: "hello" } }] } }] }],
-    });
+    await handleWhatsAppWebhook(inbound(`wamid.x.${Date.now()}`, { from: "27999999999", text: { body: "hello" } }));
     expect(replies.join("\n")).toMatch(/link code/i);
   });
 });

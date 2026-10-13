@@ -4,7 +4,9 @@ import { extractLinkCode, extractQrToken } from "@/server/channels/messaging.ser
 import { parseTelegramUpdate } from "@/server/channels/telegram/handler";
 import { parseWhatsAppPayload, verifyWhatsAppSignature } from "@/server/channels/whatsapp/handler";
 
-const wa = (message: Record<string, unknown>) => ({
+type Payload = Parameters<typeof parseWhatsAppPayload>[0];
+
+const wa = (message: Record<string, unknown>): Payload => ({
   entry: [
     {
       changes: [
@@ -12,7 +14,7 @@ const wa = (message: Record<string, unknown>) => ({
           value: {
             metadata: { phone_number_id: "PNID" },
             contacts: [{ wa_id: "27821234567", profile: { name: "Thabo" } }],
-            messages: [{ id: "wamid.1", from: "27821234567", ...message }],
+            messages: [{ id: "wamid.1", from: "27821234567", type: "text", ...message }],
           },
         },
       ],
@@ -42,7 +44,7 @@ describe("WhatsApp payload parsing", () => {
   });
 
   it("ignores delivery/read status callbacks", () => {
-    const statuses = { entry: [{ changes: [{ value: { metadata: { phone_number_id: "PNID" }, statuses: [{ status: "read" }] } }] }] };
+    const statuses = { entry: [{ changes: [{ value: { metadata: { phone_number_id: "PNID" }, statuses: [{ status: "read" }] } }] }] } as unknown as Payload;
     expect(parseWhatsAppPayload(statuses)).toEqual([]);
   });
 });

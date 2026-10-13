@@ -14,6 +14,11 @@ import { sourceLabel } from "@/lib/device-labels";
 import { EmployeeActions } from "../_components/EmployeeActions";
 import { LinkAccountPanel } from "../_components/LinkAccountPanel";
 import { CredentialsPanel } from "../_components/CredentialsPanel";
+import { TermsPanel } from "../_components/TermsPanel";
+import { RecordLeaveButton } from "../../leave/_components/LeaveForms";
+import { getEffectiveTerms } from "@/server/time/terms.service";
+import { leaveBalances, listLeaveRequests, listLeaveTypes } from "@/server/time/leave.service";
+import { currentScheduleName } from "@/server/services/schedule.service";
 import { CorrectionForm } from "../_components/CorrectionForm";
 
 const EVENT_LABEL = {
@@ -40,11 +45,18 @@ export default async function EmployeeProfilePage({
 
   const today = localDate(new Date(), tz);
   const from = range === "day" ? today : range === "week" ? addDays(today, -(isoWeekday(today) - 1)) : `${today.slice(0, 8)}01`;
-  const [hours, events, credentials] = await Promise.all([
-    can(ctx.role, "attendance:read") ? employeeHours(ctx, id, from, today) : null,
-    can(ctx.role, "attendance:read") ? listClockEvents(ctx, { employeeId: id, limit: 30 }) : [],
+  const canReadAttendance = can(ctx.role, "attendance:read");
+  const [hours, events, credentials, terms, scheduleName, balances, leave, leaveTypes] = await Promise.all([
+    canReadAttendance ? employeeHours(ctx, id, from, today) : null,
+    canReadAttendance ? listClockEvents(ctx, { employeeId: id, limit: 30 }) : [],
     listCredentials(ctx, id),
+    getEffectiveTerms(ctx.companyId, id, today),
+    currentScheduleName(ctx, id, today),
+    canReadAttendance ? leaveBalances(ctx, id) : [],
+    canReadAttendance ? listLeaveRequests(ctx, { employeeId: id, limit: 8 }) : [],
+    listLeaveTypes(ctx),
   ]);
+  const canApproveLeave = can(ctx.role, "leave:approve");
   const canWrite = can(ctx.role, "employees:write");
   const canCorrect = can(ctx.role, "attendance:correct");
 
@@ -70,7 +82,7 @@ export default async function EmployeeProfilePage({
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card title="Profile" className="lg:col-span-2">
           <dl className="grid gap-4 sm:grid-cols-3">
             {detail("Status", <Badge tone={statusTone(e.status)}>{e.status === "ACTIVE" ? "Active" : "Inactive"}</Badge>)}
@@ -117,6 +129,43 @@ export default async function EmployeeProfilePage({
             />
           </Card>
         </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card title="Working hours">
+          <TermsPanel employeeId={id} terms={terms} scheduleName={scheduleName} canManage={canWrite} />
+        </Card>
+        <Card
+          title="Leave"
+          action={canApproveLeave && e.status === "ACTIVE" && (
+            <RecordLeaveButton employeeId={id} employees={[]} types={leaveTypes.map((t) => ({ id: t.id, name: t.name }))} />
+          )}
+        >
+          {balances.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {balances.map((b) => (
+                <span key={b.leaveTypeId} className="rounded-[10px] bg-soft-surface px-3 py-1.5 text-sm">
+                  {b.name}: <b className={b.balance < 0 ? "text-red-600" : "text-ink"}>{Math.round(b.balance * 100) / 100}</b> days
+                </span>
+              ))}
+            </div>
+          )}
+          {leave.length === 0 ? (
+            <p className="text-sm text-muted">No leave recorded.</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5 text-sm">
+              {leave.map((l) => (
+                <li key={l.id} className="flex justify-between gap-3">
+                  <span>
+                    {l.typeName} · {l.startDate === l.endDate ? l.startDate : `${l.startDate} → ${l.endDate}`}
+                    <span className="text-muted"> ({Number(l.days)} d)</span>
+                  </span>
+                  <Badge tone={l.status === "APPROVED" ? "green" : l.status === "REQUESTED" ? "amber" : "gray"}>{l.status.toLowerCase()}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
 
       {hours && (

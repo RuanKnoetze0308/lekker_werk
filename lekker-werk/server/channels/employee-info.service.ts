@@ -93,7 +93,20 @@ export async function answerInfoRequest(key: EmployeeDataKey, employeeId: string
         .limit(5);
       return rows.length ? rows.map((r) => `${r.d}: ${formatMinutes(r.w)} (${r.s.toLowerCase()})`).join("\n") : "No history yet.";
     }
-    case "leave_balance":
+    case "leave_balance": {
+      const rows = (
+        await db.execute(sql`
+          select t.name, coalesce(sum(l.days), 0)::float as balance
+          from leave_types t
+          join employees e on e.company_id = t.company_id and e.id = ${employeeId}
+          left join leave_ledger l on l.leave_type_id = t.id and l.employee_id = e.id
+          where t.active and t.accrual <> 'NONE'
+          group by t.name order by t.name`)
+      ).rows as { name: string; balance: number }[];
+      if (!rows.length) return "No leave balances are set up yet. Please ask your manager.";
+      const lines = rows.map((r) => `${r.name}: ${Math.round(r.balance * 100) / 100} days`);
+      return ["Your leave balance:", ...lines].join("\n");
+    }
     case "payslip":
       return "This isn't available yet.";
   }

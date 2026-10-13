@@ -64,7 +64,36 @@ export const attendanceStatus = pgEnum("attendance_status", [
   "ABSENT",
   "INCOMPLETE",
   "ON_LEAVE",
+  // Scheduled day that is a public holiday and wasn't worked (paid holiday).
+  "PUBLIC_HOLIDAY",
+  // Site closed (load-shedding, strike, burst pipe...): see site_closures.
+  "SITE_CLOSED",
 ]);
+
+export const payType = pgEnum("pay_type", ["HOURLY", "SALARIED"]);
+
+/** How a leave type builds up: not at all, a slice per month, or a block at each cycle start. */
+export const leaveAccrual = pgEnum("leave_accrual", ["NONE", "MONTHLY", "CYCLE_UPFRONT"]);
+
+export const leaveRequestStatus = pgEnum("leave_request_status", [
+  "REQUESTED",
+  "APPROVED",
+  "DECLINED",
+  "CANCELLED",
+]);
+
+export const leaveSource = pgEnum("leave_source", ["WEB", "TELEGRAM", "WHATSAPP", "MANAGER", "IMPORT"]);
+
+export const leaveLedgerKind = pgEnum("leave_ledger_kind", [
+  "OPENING",
+  "ACCRUAL",
+  "USAGE",
+  "REVERSAL",
+  "ADJUSTMENT",
+  "EXPIRY",
+]);
+
+export const payPeriodStatus = pgEnum("pay_period_status", ["OPEN", "LOCKED", "EXPORTED"]);
 
 export const integrationProvider = pgEnum("integration_provider", [
   "CUSTOM_API",
@@ -112,6 +141,8 @@ export const notificationType = pgEnum("notification_type", [
   "PAYMENT_FAILED",
   "TRIAL_ENDING",
   "INTEGRATION_REQUESTED",
+  "LEAVE_REQUESTED",
+  "LEAVE_DECIDED",
 ]);
 
 export const rejectionReason = pgEnum("rejection_reason", [
@@ -135,4 +166,5 @@ export const rejectionReason = pgEnum("rejection_reason", [
   "CREDENTIAL_UNKNOWN",
   "DEVICE_DISABLED",
   "TIMESTAMP_OUT_OF_RANGE",
+  "PERIOD_LOCKED",
 ]);

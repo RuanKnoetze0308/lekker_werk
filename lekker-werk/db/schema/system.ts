@@ -26,8 +26,25 @@ export interface MealBreakPolicy {
   paid: boolean;
 }
 
+export interface PayrollSettings {
+  frequency: "MONTHLY" | "FORTNIGHTLY" | "WEEKLY";
+  /** Monthly periods start on this day (1 = calendar month; 26 = 26th to 25th, common in SA). */
+  monthStartDay: number;
+  /** First day of any weekly/fortnightly period (YYYY-MM-DD); later periods follow on. */
+  anchorDate: string;
+  /** Defaults when an employee has no employment terms recorded. BCEA maximum: 45 h / week. */
+  defaultWeeklyMinutes: number;
+  defaultDaysPerWeek: number;
+}
+
 export interface CompanySettingsShape {
+  payroll: PayrollSettings;
   attendance: {
+    /**
+     * First day attendance is tracked (YYYY-MM-DD). Before it, "didn't clock" is not an absence.
+     * Unset = the company's sign-up date.
+     */
+    trackFrom?: string;
     mealBreak: MealBreakPolicy;
     gpsValidationEnabled: boolean;
     requireQrForClocking: boolean;

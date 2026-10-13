@@ -7,6 +7,7 @@ const TABS = [
   { href: "/settings", label: "Company" },
   { href: "/settings/communication", label: "Communication" },
   { href: "/settings/attendance", label: "Attendance" },
+  { href: "/settings/payroll", label: "Payroll & leave" },
   { href: "/settings/employee-permissions", label: "Employee permissions" },
   { href: "/settings/users", label: "Users & roles" },
   { href: "/settings/audit", label: "Audit log" },

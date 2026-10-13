@@ -1,6 +1,15 @@
 import { z } from "zod";
 
+export const payrollSettingsSchema = z.object({
+  frequency: z.enum(["MONTHLY", "FORTNIGHTLY", "WEEKLY"]),
+  monthStartDay: z.coerce.number().int().min(1).max(28),
+  anchorDate: z.iso.date(),
+  defaultWeeklyMinutes: z.coerce.number().int().min(60).max(4200),
+  defaultDaysPerWeek: z.coerce.number().int().min(1).max(7),
+});
+
 export const attendanceSettingsSchema = z.object({
+  trackFrom: z.iso.date().optional(),
   mealBreak: z.object({
     policy: z.enum(["AUTO_DEDUCT", "CLOCKED"]),
     minutes: z.coerce.number().int().min(0).max(240),

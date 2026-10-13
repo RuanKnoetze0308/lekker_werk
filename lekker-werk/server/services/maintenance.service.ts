@@ -4,6 +4,10 @@ import { db } from "@/db/client";
 import { purgeExpiredSessions } from "./authentication.service";
 import { purgeRateLimits } from "./rate-limit.service";
 import { notify } from "./notification.service";
+import { addDays, localDate } from "@/lib/time";
+import { recomputeDay } from "./attendance.service";
+import { ensureNationalHolidays } from "../time/holidays.service";
+import { runLeaveAccruals } from "../time/leave.service";
 
 /** Housekeeping + exception detection. Call from a scheduler (see /api/jobs/maintenance). */
 export async function runMaintenance() {
@@ -39,5 +43,21 @@ export async function runMaintenance() {
       body: "Review incomplete attendance records and correct them.",
     });
   }
-  return { forgottenCompanies: forgotten.length };
+  // Time & leave: holidays for this year and next, leave accruals, and yesterday's final
+  // attendance (that's when "not clocked" becomes an absence, leave or holiday day).
+  const year = new Date().getUTCFullYear();
+  await ensureNationalHolidays([year, year + 1]);
+  const companies = (await db.execute(sql`select c.id, c.timezone from companies c where c.status = 'ACTIVE'`)).rows as { id: string; timezone: string }[];
+  let accrued = 0;
+  let closedDays = 0;
+  for (const c of companies) {
+    const today = localDate(new Date(), c.timezone);
+    accrued += await runLeaveAccruals(c.id, today);
+    const staff = (await db.execute(sql`select id from employees where company_id = ${c.id} and status = 'ACTIVE'`)).rows as { id: string }[];
+    for (const e of staff) {
+      await recomputeDay(db, e.id, addDays(today, -1));
+      closedDays++;
+    }
+  }
+  return { forgottenCompanies: forgotten.length, leaveEntriesAccrued: accrued, daysClosed: closedDays };
 }

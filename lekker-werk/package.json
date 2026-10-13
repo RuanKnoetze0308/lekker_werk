@@ -8,15 +8,17 @@
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "telegram:poll": "node --conditions=react-server --import tsx scripts/telegram-poll.ts",
     "demo:seed": "node --conditions=react-server --import tsx scripts/demo/seed.ts",
     "demo:clean": "node --conditions=react-server --import tsx scripts/demo/clean.ts",
     "test": "vitest run",
     "attendance:recompute": "node --conditions=react-server --import tsx scripts/recompute-attendance.ts",
-    "test:integration": "node -e \"process.env.INTEGRATION=1;require('child_process').execSync('vitest run tests/',{stdio:'inherit',env:process.env})\""
+    "test:integration": "node -e \"process.env.INTEGRATION=1;require('child_process').execSync('vitest run tests/',{stdio:'inherit',env:process.env})\"",
+    "migrate": "node scripts/db/migrate.mjs",
+    "db:mark-baseline": "node scripts/db/mark-baseline.mjs",
+    "db:export": "node scripts/db/export-data.mjs",
+    "db:import": "node scripts/db/import-data.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.44.0",
@@ -43,5 +45,8 @@
     "tsx": "^4.20.6",
     "typescript": "^5",
     "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }

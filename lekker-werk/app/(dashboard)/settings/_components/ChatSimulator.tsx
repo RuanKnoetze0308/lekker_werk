@@ -58,7 +58,7 @@ export function ChatSimulator({ employees, qrCodes }: Props) {
   const wantsLocation = lastBot?.reply.requestLocation;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="flex min-h-[420px] flex-col overflow-hidden rounded-[18px] border border-border bg-soft-surface">
         <div className="flex items-center justify-between border-b border-border bg-white px-4 py-2.5 text-sm">
           <span className="font-semibold">{channel === "TELEGRAM" ? "Telegram" : "WhatsApp"} · {chatId}</span>

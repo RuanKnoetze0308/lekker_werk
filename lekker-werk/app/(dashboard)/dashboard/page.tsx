@@ -119,7 +119,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         />
       </div>
 
-      <div className="mt-8 grid items-start gap-6 2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="mt-8 grid grid-cols-1 items-start gap-6 2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card title={data.isToday ? `On the clock now (${live.length})` : "On the clock now"} flush>
           {!data.isToday ? (
             <EmptyState title="Only shown for today" />

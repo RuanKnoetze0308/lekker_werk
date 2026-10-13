@@ -12,6 +12,9 @@ import { sha256 } from "@/lib/crypto";
 import { EMPLOYEE_DATA_KEYS, type EmployeeDataKey } from "@/lib/defaults";
 import { processClock, getClockState } from "../clocking/clocking.service";
 import { REJECTION_MESSAGES } from "../clocking/messages";
+import { AppError } from "../errors";
+import { localDate } from "@/lib/time";
+import { requestLeaveFromChat } from "../time/leave.service";
 import type { ClockAction } from "../clocking/types";
 import { getEmployeeDataPermissions, getSettings } from "../services/company.service";
 import { rateLimit } from "../services/rate-limit.service";
@@ -60,6 +63,12 @@ const WORD_ALIASES: Record<string, string> = {
   HELLO: "MENU",
   "/START": "MENU",
   "/MENU": "MENU",
+  SICK: "SICK_TODAY",
+  "I'M SICK": "SICK_TODAY",
+  "IM SICK": "SICK_TODAY",
+  SIEK: "SICK_TODAY",
+  "EK IS SIEK": "SICK_TODAY",
+  LEAVE: "INFO_leave_balance",
 };
 
 async function getConv(msg: InboundMessage): Promise<ConvState> {
@@ -103,6 +112,7 @@ async function buildMenu(companyId: string): Promise<MenuItem[]> {
   if (settings.breaksEnabled) {
     items.push({ id: "BREAK_START", label: "Start break" }, { id: "BREAK_END", label: "End break" });
   }
+  items.push({ id: "SICK_TODAY", label: "Report sick today" });
   for (const k of EMPLOYEE_DATA_KEYS) {
     if (perms[k.key]) items.push({ id: `INFO_${k.key}`, label: k.label });
   }
@@ -228,6 +238,8 @@ export async function handleInbound(msg: InboundMessage, sender: ChannelSender) 
     return runClock(msg, emp, CLOCK_ACTIONS[intent], state, reply);
   }
 
+  if (intent === "SICK_TODAY") return reportSick(msg, emp, reply);
+
   if (intent.startsWith("INFO_")) {
     const key = intent.slice(5) as EmployeeDataKey;
     const perms = await getEmployeeDataPermissions(msg.companyId);
@@ -267,6 +279,38 @@ async function runClock(
   }
   await setConv(msg, { qrToken: state.qrToken });
   return reply(result.message, { buttons: await quickButtons(emp.id, msg.companyId) });
+}
+
+/**
+ * "I'm sick": books a sick-leave *request* for today (in the employee's timezone) and tells the
+ * managers. A manager still approves it, so nothing is paid or deducted on the employee's word alone.
+ */
+async function reportSick(
+  msg: InboundMessage,
+  emp: { id: string; firstName: string },
+  reply: (t: string, e?: { buttons?: OutboundButton[] }) => Promise<void>,
+) {
+  const [loc] = await db
+    .select({ timezone: locations.timezone })
+    .from(employees)
+    .innerJoin(locations, eq(locations.id, employees.locationId))
+    .where(eq(employees.id, emp.id));
+  const today = localDate(new Date(), loc?.timezone ?? "Africa/Johannesburg");
+  try {
+    const { type } = await requestLeaveFromChat(msg.companyId, emp.id, "SICK", today, today, msg.channel, "Reported sick via chat");
+    return reply(
+      [
+        `Sorry you're not well, ${emp.firstName}. I've told your manager you're off sick today.`,
+        type.documentAfterDays ? `If you're off for more than ${type.documentAfterDays} days in a row, you'll need a doctor's note.` : null,
+        "Get well soon!",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  } catch (err) {
+    const message = err instanceof AppError ? err.message : "I couldn't record that. Please tell your manager directly.";
+    return reply(message);
+  }
 }
 
 async function handleLink(
