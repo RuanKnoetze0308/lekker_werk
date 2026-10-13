@@ -46,8 +46,13 @@ function clientIp(req: NextRequest) {
 function assertSameOrigin(req: NextRequest) {
   const origin = req.headers.get("origin");
   if (!origin) return; // non-browser clients (no cookie => no CSRF risk)
-  const allowed = new URL(env.appUrl).origin;
-  if (origin !== allowed && origin !== req.nextUrl.origin) throw Errors.forbidden("Bad origin.");
+  if (origin === new URL(env.appUrl).origin) return;
+  // Behind a TLS-terminating proxy (Railway, Azure...) the app itself sees plain http and the
+  // proxy's internal address, so compare against the host and scheme the browser actually used.
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? req.nextUrl.protocol.replace(":", "");
+  if (host && origin === `${proto}://${host}`) return;
+  throw Errors.forbidden("Bad origin.");
 }
 
 interface RouteOptions {
