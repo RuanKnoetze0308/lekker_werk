@@ -16,3 +16,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Tenancy:** `companyId` comes from the session / device key / webhook secret, never from request input.
 - **Demo data** only via `npm run demo:seed` / `npm run demo:clean` (tracked in `demo_data_registry`). Don't hard-code sample data in app code.
 - **Node 20+** is required (Next 16). Scripts run with `node --conditions=react-server --import tsx` (see package.json).
+- **Schema changes go through migrations:** edit `db/schema`, `npm run db:generate`, `npm run migrate`, commit the new `db/migrations` file. Never `drizzle-kit push` (production applies migrations on deploy, see docs/DEPLOY_RAILWAY.md).
+- **Hours rules live in pure functions with tests:** `server/attendance/derive.ts` (day maths, meal break, day status) and `server/attendance/paycodes.ts` (payroll categories). Change them test-first (`npm test`).
+- **Locked pay periods are final:** anything that changes attendance for a date must call `assertDatesOpen()` (server/time/period-lock.ts).
+- **Mobile:** every page must work at 375px wide without page-level horizontal scroll; primary actions in tables need a stacked phone layout.

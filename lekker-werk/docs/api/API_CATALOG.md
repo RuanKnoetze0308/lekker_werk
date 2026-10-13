@@ -33,7 +33,8 @@
 | Permission | SUPER_ADMIN | COMPANY_ADMIN | MANAGER | EMPLOYEE |
 |---|:-:|:-:|:-:|:-:|
 | dashboard:view, employees:read/write, attendance:read/correct, schedules:manage, locations:read, qr:manage, reports:read | ✓ | ✓ | ✓ (own locations) | |
-| locations:write, devices:manage, integrations:manage, settings:manage, users:manage, audit:read | ✓ | ✓ | | |
+| leave:approve | ✓ | ✓ | ✓ (own locations) | |
+| locations:write, devices:manage, payroll:manage, integrations:manage, settings:manage, users:manage, audit:read | ✓ | ✓ | | |
 | platform:manage | ✓ | | | |
 
 Source of truth: `server/auth/permissions.ts`.
@@ -50,6 +51,7 @@ Source of truth: `server/auth/permissions.ts`.
 | Chat channels | `communication_channels`, `communication_accounts`, `link_codes`, `conversation_states` | One channel row per company per channel. |
 | Clocking | `qr_codes`, `clock_events` (**append-only**, enforced by trigger), `clock_attempts`, `attendance_records`, `break_records`, `work_schedules`, `employee_schedules`, `public_holidays` | Attendance is **derived** from events and can be rebuilt at any time. |
 | Integrations | `integrations`, `integration_syncs`, `imported_hours`, `integration_requests` | Syncs are queued and run by a worker. |
+| Time & pay | `employment_terms`, `leave_types`, `leave_requests`, `leave_ledger` (append-only balance ledger), `site_closures`, `public_holidays`, `pay_periods`, `pay_period_lines` (frozen totals), `pay_exports` | Hours are derived; pay rates stay in the payroll system. |
 | Billing | `subscriptions`, `payments` | PayFast. |
 | System | `company_settings`, `employee_data_permissions`, `audit_logs`, `notifications`, `rate_limits`, `demo_data_registry` (development only) | |
 
@@ -85,6 +87,7 @@ All clock-ins go through **one** operation, whatever the hardware or channel. Ad
 
 ### INTERNAL `attendance.recomputeDay(employeeId, workDate)`
 - **Today:** `server/services/attendance.service.ts → recomputeDay()`. Pure day maths lives in `server/attendance/derive.ts` (unit tested in `tests/derive.test.ts`).
+- **Day status:** besides clocked work, the day context (`server/time/day-context.ts`: approved leave, public holiday, site closure) decides days that weren't fully worked: **public holiday > leave > closure > absent**. Nothing counts as scheduled before `company_settings.attendance.trackFrom` (default: the sign-up date), before `employees.hired_on`, or after `deactivated_on`. Writes `attendance_records.leave_minutes`, `leave_type_id`, `public_holiday`, `closure_minutes`, `closure_paid` and the status (PRESENT, LATE, INCOMPLETE, ABSENT, ON_LEAVE, PUBLIC_HOLIDAY, SITE_CLOSED).
 - **Meal break rule** (`company_settings.attendance.mealBreak`):
   - **AUTO_DEDUCT:** when worked time is over `afterMinutes` (BCEA: 300) and less break was clocked than required (the schedule day's `breakMinutes`, else the company default), the shortfall is deducted and stored in `attendance_records.auto_break_minutes`.
   - **CLOCKED:** only clocked breaks count.
@@ -310,12 +313,78 @@ Prices live only in `lib/pricing.ts`.
 
 ---
 
+### 6.14 Working hours (employment terms)
+| Endpoint | Status | Today | Perm | Body | DB |
+|---|---|---|---|---|---|
+| `GET /employees/{id}/terms` | ROUTE | `terms.service.listTerms` | employees:read | | R `employment_terms` |
+| `POST /employees/{id}/terms` | ROUTE | `setTerms` | employees:write | `{ effectiveFrom, payType: HOURLY\|SALARIED, contractedMinutesPerWeek, daysPerWeek, overtimeEligible }` | W tx: deletes terms starting on/after the date, ends the previous open terms the day before, inserts the new ones, `audit_logs` |
+| `getEffectiveTerms(employee, date)` | INTERNAL | | | | R `employment_terms`, else `company_settings.payroll` defaults |
+
+### 6.15 Leave
+| Endpoint | Status | Today | Perm | Body / Query | DB |
+|---|---|---|---|---|---|
+| `GET /leave/types?all=1` | ROUTE | `leave.service.listLeaveTypes` | attendance:read | | W (once) seeds BCEA defaults (`ensureLeaveTypes`); R `leave_types` |
+| `POST /leave/types` · `PUT /leave/types/{id}` | ROUTE | `saveLeaveType` | settings:manage | `{ code, name, paid, accrual: NONE\|MONTHLY\|CYCLE_UPFRONT, entitlementDays, cycleMonths, documentAfterDays?, employeeRequestable, active }` | W `leave_types`, `audit_logs` |
+| `GET /leave/requests` | ROUTE | `listLeaveRequests` | attendance:read | `status, employeeId, from, to, limit` | R `leave_requests`, `employees`, `leave_types` |
+| `POST /leave/requests` | ROUTE | `requestLeaveAsManager` | leave:approve | `{ employeeId, leaveTypeId, startDate, endDate, dayFraction: 1\|0.5, reason?, documentRef?, approve }` | days = scheduled working days (no weekends, days off or holidays) × fraction; 409 on overlap; W `leave_requests` (+ approve flow) |
+| `POST /leave/requests/{id}/decision` | ROUTE | `decideLeave` | leave:approve | `{ approve, note? }` | blocked in locked periods (409 PERIOD_LOCKED). W tx: `leave_requests`; on approve `leave_ledger` USAGE (−days, idempotent) + `recomputeDay` for each date; `audit_logs` |
+| `POST /leave/requests/{id}/cancel` | ROUTE | `cancelLeave` | leave:approve | | W tx: status CANCELLED; if it was approved, `leave_ledger` REVERSAL (+days) + recompute |
+| `GET /leave/balances?employeeId` | ROUTE | `leaveBalances` | attendance:read | | R sum(`leave_ledger.days`) per employee × type with accrual |
+| `POST /leave/adjustments` | ROUTE | `adjustLeaveBalance` | leave:approve | `{ employeeId, leaveTypeId, days, kind: OPENING\|ADJUSTMENT, note }` | W `leave_ledger`, `audit_logs` |
+| Chat "SICK" / "Report sick today" | INTERNAL | `requestLeaveFromChat` | linked chat account | | W `leave_requests` (REQUESTED, source TELEGRAM/WHATSAPP), `notifications` (LEAVE_REQUESTED) |
+| `runLeaveAccruals(company, asOf)` | JOB | `leave.service` | | | W `leave_ledger` ACCRUAL / EXPIRY, idempotent by `idempotency_key` (`ACCRUAL:YYYY-MM`, `CYCLE:n`, `EXPIRY:n`) from `employees.hired_on` |
+
+### 6.16 Exceptions (to sort out before payroll)
+| Endpoint | Status | Today | Perm | Body / Query | DB |
+|---|---|---|---|---|---|
+| `GET /exceptions?from&to` | ROUTE | `exceptions.service.listExceptions` | attendance:read | | R `attendance_records` (ABSENT, INCOMPLETE), count of `leave_requests` REQUESTED |
+| `POST /exceptions/absences/{attendanceRecordId}/resolve` | ROUTE | `resolveAbsence` | leave:approve | `{ leaveTypeId, note? }` | creates and approves a one-day leave of that type (sick, unpaid, AWOL…) → ledger + recompute; `audit_logs` |
+
+### 6.17 Site closures
+| Endpoint | Status | Today | Perm | Body | DB |
+|---|---|---|---|---|---|
+| `GET /locations/{id}/closures` | ROUTE | `closures.service.listClosures` | locations:read | | R `site_closures` |
+| `POST /locations/{id}/closures` | ROUTE | `createClosure` | attendance:correct | `{ startDate, endDate, paid, reason }` | blocked in locked periods; W `site_closures`, `audit_logs`; recomputes the location's staff for past and current days |
+| `DELETE /closures/{id}` | ROUTE | `deleteClosure` | attendance:correct | | W delete + recompute |
+
+### 6.18 Payroll (pay periods)
+| Endpoint | Status | Today | Perm | Body / Query | DB |
+|---|---|---|---|---|---|
+| `GET /settings/payroll` · `PUT /settings/payroll` | ROUTE | `getSettings` / `updatePayrollSettings` | settings:manage | `{ frequency: MONTHLY\|FORTNIGHTLY\|WEEKLY, monthStartDay, anchorDate, defaultWeeklyMinutes, defaultDaysPerWeek }` | W `company_settings.payroll` |
+| `GET /payroll/periods` | ROUTE | `payroll.service.listPayPeriods` | payroll:manage | | creates the current and recent periods from the settings (not before the company's first activity); drops OPEN periods that no longer fit a changed frequency; R `pay_periods` |
+| `GET /payroll/periods/{id}?refresh=1` | ROUTE | `getPayPeriodReport` | payroll:manage | | OPEN: live totals (`computePayLines` over `attendance_records`, after an optional recompute). LOCKED/EXPORTED: frozen `pay_period_lines`. Also returns exception counts and the export history |
+| `POST /payroll/periods/{id}/lock` | ROUTE | `lockPayPeriod` | payroll:manage | `{ note?, force }` | recomputes the period; 409 EXCEPTIONS_OPEN unless `force` with a note; W tx: `pay_period_lines` snapshot, status LOCKED, `audit_logs` |
+| `POST /payroll/periods/{id}/reopen` | ROUTE | `reopenPayPeriod` | settings:manage | `{ note }` | W tx: delete lines, status OPEN, `audit_logs` (export history kept) |
+| `GET /payroll/periods/{id}/export?format=lines\|wide` | ROUTE | `exportPayPeriod` | payroll:manage | | CSV from the frozen lines (decimal hours, days for leave/holiday/absent); W `pay_exports`, status EXPORTED, `audit_logs` |
+| `assertDatesOpen(company, from, to)` | INTERNAL | `server/time/period-lock.ts` | | | Every write that changes attendance for a date in a LOCKED/EXPORTED period is refused: clock punches (engine reason `PERIOD_LOCKED`), corrections, leave decisions, closures |
+
+**Pay codes** (`server/attendance/paycodes.ts`, unit tested):
+- `NORMAL`
+- `OVERTIME`: over the daily threshold, or over the contracted week
+- `SUNDAY`
+- `PUBLIC_HOLIDAY_WORKED`
+- `PUBLIC_HOLIDAY`: paid, not worked
+- `LEAVE_<CODE>`
+- `ABSENT`
+- `CLOSURE_PAID` / `CLOSURE_UNPAID`
+
+Salaried staff without overtime have overtime folded into NORMAL. Rates (1.5×, 2×) are applied by the payroll system.
+
+**Planned (connectors):**
+- `POST /payroll/periods/{id}/push/{integrationId}` sends the locked lines to SimplePay, PaySpace, Sage and other connectors through `IntegrationProviderImpl.exportTimesheets`. It records a `pay_exports` row with `integration_id`.
+- **Employee master-data sync** (`fetchEmployees`) runs with the payroll system as the master once connected. Fields it owns become read-only. Records are matched on `employee_number`, and unmatched ones go to a review list.
+
+### 6.19 Health
+| Endpoint | Status | Today | Auth | DB |
+|---|---|---|---|---|
+| `GET /health` | ROUTE | `app/api/health/route.ts` | none | `select 1` → `{ ok }` / 503. Used by the hosting platform's health check |
+
 ## 7. Jobs (scheduled / background)
 
 | Job | Status | Today | Trigger | DB |
 |---|---|---|---|---|
 | Integration sync worker | ROUTE `POST /jobs/sync` | `runSyncJobs` | cron with `CRON_SECRET` → **Azure: timer trigger + queue** | W `integration_syncs` (fail stuck runs, enqueue due ones, claim with `FOR UPDATE SKIP LOCKED`), upserts `imported_hours`, W `integrations` (last sync, next sync), `notifications` |
-| Maintenance | ROUTE `POST /jobs/maintenance` | `runMaintenance` | cron → **Azure: timer trigger (hourly)** | deletes expired `sessions`, `rate_limits`, `link_codes`, `conversation_states`, `password_resets`; detects forgotten clock-outs → `notifications` |
+| Maintenance | ROUTE `POST /jobs/maintenance` | `runMaintenance` | cron → **Azure: timer trigger (hourly)**; today `node scripts/cron.mjs maintenance` | deletes expired `sessions`, `rate_limits`, `link_codes`, `conversation_states`, `password_resets`; detects forgotten clock-outs → `notifications`; upserts national `public_holidays` (this and next year, from `lib/sa-holidays.ts`); `runLeaveAccruals` per company; recomputes yesterday for every active employee (no-shows become ABSENT, leave or holiday days) |
 | Telegram poller | script | `scripts/telegram-poll.ts` | local development only | see §5 |
 | Demo data | script | `scripts/demo/seed.ts`, `clean.ts` | manual, development only | creates/removes demo rows listed in `demo_data_registry` |
 | Attendance recompute | script | `scripts/recompute-attendance.ts` (`npm run attendance:recompute -- --days N --company ID`) | manual, after changing a rule | rebuilds `attendance_records` and `break_records` from `clock_events` |
@@ -337,5 +406,6 @@ Prices live only in `lib/pricing.ts`.
 
 | Date | Change |
 |---|---|
+| 2026-10-13 (b) | Time & pay:<ul><li>employment terms</li><li>leave types (BCEA defaults), requests, decisions, cancellations, balance ledger, accruals and adjustments</li><li>"SICK" and leave balance in chat</li><li>South African public holidays with the Sunday→Monday rule</li><li>site closures</li><li>exceptions inbox and absence resolution</li><li>pay periods with live and frozen totals, lock/reopen, CSV export, and lock enforcement in the engine and corrections</li><li>attendance `trackFrom` and employment-date rules</li><li>`GET /health`</li></ul>Migrations replace `db:push` (`npm run migrate`, baseline with a uuidv7 fallback and the immutability trigger). Data export/import scripts for Railway. |
 | 2026-10-13 | Meal-break rule (auto-deduct unclocked lunch, configurable; `attendance_records.auto_break_minutes`). WhatsApp shared LekkerWerk number with tenant resolution, configurable Graph API version, failure-safe replies, dev logging sender. Pure parsers and unit tests for WhatsApp and Telegram, plus an integration test for the shared number (`npm run test:integration`). `attendance:recompute` script. |
 | 2026-10-10 | First version. Covers all existing routes, plus:<ul><li>a clocking engine that works with any device</li><li>the device API</li><li>device and credential admin</li><li>the chat simulator</li><li>Telegram polling mode and automatic bot setup</li><li>the South African integration catalog and integration requests</li><li>new dashboard read models (live board, activity, hours by employee)</li><li>demo seed/clean</li></ul> |

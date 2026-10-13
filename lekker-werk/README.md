@@ -7,19 +7,21 @@ Stack: Next.js 16 (App Router) · TypeScript · Tailwind v4 · PostgreSQL 18 · 
 ## First run
 
 ```bash
-npm install
-cp .env.example .env.local      # then fill in the values
-npm run db:push                  # creates all tables from db/schema
-psql -d lekkerwerk -f db/sql/001_immutable_clock_events.sql   # makes clock_events append-only
-npm run dev
+npm install                      # Node 20+ (Next 16)
+cp .env.example .env.local       # then fill in the values
+createdb lekkerwerk
+npm run migrate                  # creates all tables (db/migrations)
+npm run demo:seed                # optional: demo company data (npm run demo:clean removes it)
+npm run dev -- -p 3001
 ```
 
-Create the database first (`createdb lekkerwerk`). Telegram/WhatsApp webhooks need a public HTTPS `APP_URL` (e.g. a tunnel) when testing locally.
+Tests: `npm test` (unit), `npm run test:integration` (uses the local database and demo data).
 
-Background jobs (call every minute from cron / Task Scheduler, `Authorization: Bearer $CRON_SECRET`):
+Telegram on localhost: connect the bot under Settings → Communication, then run `npm run telegram:poll`.
 
-- `POST /api/jobs/sync` – runs due ERP syncs
-- `POST /api/jobs/maintenance` – purges expired sessions, flags forgotten clock-outs
+Background jobs: `node scripts/cron.mjs maintenance` (hourly) and `node scripts/cron.mjs sync` (every 15 min), with `APP_URL` and `CRON_SECRET` set.
+
+Release: see [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md). Every database operation is listed as a future API endpoint in [docs/api/API_CATALOG.md](docs/api/API_CATALOG.md).
 
 ## Where things live
 

@@ -55,3 +55,8 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+### Local-only (never commit)
+# Backups contain .env.local and other secrets
+backups/
+# Downloaded tools (large binaries)
+tools/
