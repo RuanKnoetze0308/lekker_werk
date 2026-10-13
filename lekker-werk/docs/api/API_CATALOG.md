@@ -84,7 +84,11 @@ All clock-ins go through **one** operation, whatever the hardware or channel. Ad
 - **Azure note:** keep this as one function/library shared by every ingress. If volume needs it, ingress functions enqueue to Service Bus with a session per `employeeId` (which preserves per-employee ordering), and one consumer runs the engine.
 
 ### INTERNAL `attendance.recomputeDay(employeeId, workDate)`
-- **Today:** `server/services/attendance.service.ts → recomputeDay()`
+- **Today:** `server/services/attendance.service.ts → recomputeDay()`. Pure day maths lives in `server/attendance/derive.ts` (unit tested in `tests/derive.test.ts`).
+- **Meal break rule** (`company_settings.attendance.mealBreak`):
+  - **AUTO_DEDUCT:** when worked time is over `afterMinutes` (BCEA: 300) and less break was clocked than required (the schedule day's `breakMinutes`, else the company default), the shortfall is deducted and stored in `attendance_records.auto_break_minutes`.
+  - **CLOCKED:** only clocked breaks count.
+  - `paid: true` counts break time as worked and as scheduled.
 - **Reads:** `employees`, `locations`, `company_settings`, `clock_events` (excluding events that have been superseded by a correction), `employee_schedules`/`work_schedules`.
 - **Writes:** upserts `attendance_records` (unique per employee and day); deletes and re-inserts `break_records`. Idempotent.
 
@@ -134,7 +138,12 @@ Any RFID/NFC reader, biometric scanner or kiosk that can make an HTTPS call can 
 
 ### ROUTE `GET /webhooks/whatsapp` (Meta verification) · `POST /webhooks/whatsapp`
 - **Auth:** GET compares `hub.verify_token`. POST verifies the HMAC `x-hub-signature-256` with the app secret.
-- **Tenant:** `communication_channels.config.phoneNumberId` = `metadata.phone_number_id`.
+- **Two number modes:**
+  - **Shared** (the default): every company uses the LekkerWerk number (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_DISPLAY_NUMBER`). `resolveSharedTenant()` finds the company from, in order: a link code (`link_codes`, unique across companies), a QR token (`qr_codes`), then the sender's linked account (`communication_accounts`, most recently used). Unknown senders get a generic "ask for a link code" reply.
+  - **Dedicated:** `communication_channels.config.phoneNumberId` = `metadata.phone_number_id`, using the company's own encrypted access token.
+- **Parsing:** `parseWhatsAppPayload()` is a pure function covered by unit tests. It handles text, reply buttons, list replies, template buttons and location. Status callbacks are ignored.
+- **Graph API version:** `WHATSAPP_GRAPH_VERSION`, default `v26.0`.
+- **Delivery failures:** logged, never thrown. A clocking that succeeded is never retried or rolled back because a reply failed. In development, with no access token set, replies are logged (`[whatsapp:dev]`) instead of sent.
 - **DB and flow:** same as Telegram (`handleInbound`).
 
 ### JOB `telegram.poll` (local development only)
@@ -173,11 +182,11 @@ Lockout: 5 failures → 15 minutes. Login is limited to 10/min per IP and signup
 | `GET /company` | ROUTE | `company.service.getCompany` | any | | R `companies` |
 | `PATCH /company` | ROUTE | `updateCompany` | settings:manage | name, reg no., contact, timezone, `preferredChannel` | W tx `companies`, `communication_channels.is_default`, `audit_logs` |
 | `GET /settings/attendance` | ROUTE | `getSettings` | settings:manage | | R `company_settings` (merged with defaults) |
-| `PUT /settings/attendance` | ROUTE | `updateAttendanceSettings` | settings:manage | gps, requireQr, radius, duplicateWindow, maxShiftHours, breaks, overtime threshold, workingWeek | W `company_settings` upsert, `audit_logs` |
+| `PUT /settings/attendance` | ROUTE | `updateAttendanceSettings` | settings:manage | `mealBreak { policy: AUTO_DEDUCT\|CLOCKED, minutes, afterMinutes, paid }`, gps, requireQr, radius, duplicateWindow, maxShiftHours, breaks, overtime threshold, workingWeek | W `company_settings` upsert, `audit_logs`. Run `attendance.recomputeRange` afterwards for the open period so hours reflect the new rules |
 | `GET /settings/employee-permissions` | ROUTE | `getEmployeeDataPermissions` | settings:manage | | R `employee_data_permissions` |
 | `PUT /settings/employee-permissions` | ROUTE | `updateEmployeeDataPermissions` | settings:manage | `{ permissions: { key: bool } }` | W tx `employee_data_permissions`, `audit_logs` |
 | `GET /settings/channels` | ROUTE | `listChannels` | settings:manage | | R `communication_channels`. Returns mode, bot link and webhook URL, **never** credentials |
-| `PUT /settings/channels` | ROUTE | `configureChannel` | settings:manage | Telegram `{ enabled, botToken? }`; WhatsApp `{ enabled, phoneNumberId?, displayNumber?, accessToken? }` | W `communication_channels` (encrypted creds, `config.mode`), `audit_logs`. Telegram: `getMe`, then `setWebhook` (public HTTPS) or `deleteWebhook` (polling), plus `setMyCommands`/`setMyDescription`. WhatsApp enable requires the add-on (402) |
+| `PUT /settings/channels` | ROUTE | `configureChannel` | settings:manage | Telegram `{ enabled, botToken? }`; WhatsApp `{ enabled, mode: SHARED\|DEDICATED, phoneNumberId?, displayNumber?, accessToken? }` (the last three only for DEDICATED) | W `communication_channels` (encrypted creds, `config.mode`), `audit_logs`. Telegram: `getMe`, then `setWebhook` (public HTTPS) or `deleteWebhook` (polling), plus `setMyCommands`/`setMyDescription`. WhatsApp enable requires the add-on (402) |
 | `GET /audit-logs` | PAGE | `audit.service.listAuditLogs` | audit:read | `limit` | R `audit_logs`, `users` |
 
 ### 6.3 Locations
@@ -309,6 +318,7 @@ Prices live only in `lib/pricing.ts`.
 | Maintenance | ROUTE `POST /jobs/maintenance` | `runMaintenance` | cron → **Azure: timer trigger (hourly)** | deletes expired `sessions`, `rate_limits`, `link_codes`, `conversation_states`, `password_resets`; detects forgotten clock-outs → `notifications` |
 | Telegram poller | script | `scripts/telegram-poll.ts` | local development only | see §5 |
 | Demo data | script | `scripts/demo/seed.ts`, `clean.ts` | manual, development only | creates/removes demo rows listed in `demo_data_registry` |
+| Attendance recompute | script | `scripts/recompute-attendance.ts` (`npm run attendance:recompute -- --days N --company ID`) | manual, after changing a rule | rebuilds `attendance_records` and `break_records` from `clock_events` |
 
 ---
 
@@ -327,4 +337,5 @@ Prices live only in `lib/pricing.ts`.
 
 | Date | Change |
 |---|---|
+| 2026-10-13 | Meal-break rule (auto-deduct unclocked lunch, configurable; `attendance_records.auto_break_minutes`). WhatsApp shared LekkerWerk number with tenant resolution, configurable Graph API version, failure-safe replies, dev logging sender. Pure parsers and unit tests for WhatsApp and Telegram, plus an integration test for the shared number (`npm run test:integration`). `attendance:recompute` script. |
 | 2026-10-10 | First version. Covers all existing routes, plus:<ul><li>a clocking engine that works with any device</li><li>the device API</li><li>device and credential admin</li><li>the chat simulator</li><li>Telegram polling mode and automatic bot setup</li><li>the South African integration catalog and integration requests</li><li>new dashboard read models (live board, activity, hours by employee)</li><li>demo seed/clean</li></ul> |
