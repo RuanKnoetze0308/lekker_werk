@@ -18,6 +18,7 @@ import {
   CreditCard,
   Nfc,
   Palmtree,
+  ShieldCheck,
   TriangleAlert,
   Wallet,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const ICONS = {
   reports: BarChart3,
   billing: CreditCard,
   settings: Settings,
+  system: ShieldCheck,
 } as const;
 
 export interface NavItem {

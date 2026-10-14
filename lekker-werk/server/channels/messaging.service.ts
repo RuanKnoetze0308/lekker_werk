@@ -207,7 +207,7 @@ export async function handleInbound(msg: InboundMessage, sender: ChannelSender) 
   const state = await getConv(msg);
 
   if (qrToken) {
-    const qr = await resolveQrToken(qrToken);
+    const qr = await resolveQrToken(qrToken, "scan");
     if (!qr || qr.companyId !== msg.companyId || !qr.enabled || (qr.expiresAt && qr.expiresAt < new Date())) {
       return reply("That QR code isn't valid any more. Ask your manager for a new one.");
     }

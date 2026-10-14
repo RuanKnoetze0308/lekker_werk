@@ -39,7 +39,8 @@ export interface CheckoutInput {
   itemName: string;
   itemDescription: string;
   companyId: string;
-  frequency: 3 | 6; // 3 = monthly, 6 = annual
+  /** 3 = monthly, 6 = annual. Omit for a once-off payment (hardware shop). */
+  frequency?: 3 | 6;
 }
 
 export function buildCheckout(i: CheckoutInput): { action: string; fields: [string, string][] } {
@@ -59,10 +60,14 @@ export function buildCheckout(i: CheckoutInput): { action: string; fields: [stri
     ["item_name", i.itemName.slice(0, 100)],
     ["item_description", i.itemDescription.slice(0, 255)],
     ["custom_str1", i.companyId],
-    ["subscription_type", "1"],
-    ["recurring_amount", amount],
-    ["frequency", String(i.frequency)],
-    ["cycles", "0"],
+    ...(i.frequency
+      ? ([
+          ["subscription_type", "1"],
+          ["recurring_amount", amount],
+          ["frequency", String(i.frequency)],
+          ["cycles", "0"],
+        ] as [string, string][])
+      : []),
   ];
   return { action: processUrl(), fields: [...pairs, ["signature", signCheckout(pairs)]] };
 }
@@ -99,6 +104,23 @@ export async function validateWithPayfast(pairs: [string, string][]): Promise<bo
     signal: AbortSignal.timeout(15_000),
   });
   return (await res.text()).trim() === "VALID";
+}
+
+/**
+ * Everything an ITN must pass before we trust it: signature, our merchant id, PayFast source IP
+ * and PayFast confirming the payload. Returns the posted fields.
+ */
+export async function verifyItn(rawBody: string, ip: string) {
+  const pairs = [...new URLSearchParams(rawBody).entries()] as [string, string][];
+  const get = (k: string) => pairs.find(([key]) => key === k)?.[1] ?? "";
+  const pf = env.payfast;
+  if (!verifyItnSignature(pairs)) throw new AppError(400, "BAD_SIGNATURE", "Invalid signature");
+  if (get("merchant_id") !== pf.merchantId) throw new AppError(400, "BAD_MERCHANT", "Wrong merchant");
+  if (!pf.skipRemoteChecks) {
+    if (!(await isPayfastIp(ip))) throw new AppError(403, "BAD_SOURCE", "Not from PayFast");
+    if (!(await validateWithPayfast(pairs))) throw new AppError(400, "NOT_VALID", "PayFast did not confirm this payment");
+  }
+  return { pairs, get };
 }
 
 /** PayFast REST API signature: params (headers + body + passphrase) sorted alphabetically. */

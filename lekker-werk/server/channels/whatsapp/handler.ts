@@ -136,7 +136,7 @@ export async function resolveSharedTenant(from: string, text: string | undefined
   }
   const qrToken = text ? extractQrToken(text) : null;
   if (qrToken) {
-    const qr = await resolveQrToken(qrToken);
+    const qr = await resolveQrToken(qrToken, "scan");
     if (qr) return qr.companyId;
   }
   const [acct] = await db

@@ -20,9 +20,7 @@ import { addPeriod, computeAccess, type BillingAccess } from "./access";
 import {
   buildCheckout,
   cancelRemoteSubscription,
-  isPayfastIp,
-  validateWithPayfast,
-  verifyItnSignature,
+  verifyItn,
 } from "./payfast";
 
 const DAY = 86_400_000;
@@ -121,7 +119,7 @@ export interface CheckoutRequest {
   channel: ChannelChoice;
 }
 
-function assertCheckoutAllowed() {
+export function assertCheckoutAllowed() {
   const pf = env.payfast;
   if (!pf.merchantId || !pf.merchantKey) throw new AppError(503, "PAYFAST_NOT_CONFIGURED", "Payments are not configured yet.");
   const url = new URL(env.appUrl);
@@ -187,16 +185,7 @@ export async function startCheckout(ctx: AuthContext, req: CheckoutRequest) {
  * confirmation round trip and the expected amount are all checked before a subscription is activated.
  */
 export async function handleItn(rawBody: string, ip: string) {
-  const pairs = [...new URLSearchParams(rawBody).entries()] as [string, string][];
-  const get = (k: string) => pairs.find(([key]) => key === k)?.[1] ?? "";
-  const pf = env.payfast;
-
-  if (!verifyItnSignature(pairs)) throw new AppError(400, "BAD_SIGNATURE", "Invalid signature");
-  if (get("merchant_id") !== pf.merchantId) throw new AppError(400, "BAD_MERCHANT", "Wrong merchant");
-  if (!pf.skipRemoteChecks) {
-    if (!(await isPayfastIp(ip))) throw new AppError(403, "BAD_SOURCE", "Not from PayFast");
-    if (!(await validateWithPayfast(pairs))) throw new AppError(400, "NOT_VALID", "PayFast did not confirm this payment");
-  }
+  const { pairs, get } = await verifyItn(rawBody, ip);
 
   const mPaymentId = get("m_payment_id");
   const pfPaymentId = get("pf_payment_id");

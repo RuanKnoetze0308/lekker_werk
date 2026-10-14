@@ -9,6 +9,15 @@ export default async function PrintQrPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const asset = await getQrAsset(ctx, id);
 
+  if (asset.mode === "DYNAMIC") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+        <p className="font-display text-2xl font-bold text-ink">This is a dynamic QR code</p>
+        <p className="text-muted">It changes every few seconds, so a printed copy would stop working. Use “Open display screen” on the QR codes page and show it on a tablet or TV instead.</p>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-6 px-6 py-10 text-center">
       <p className="font-display text-3xl font-bold text-ink">Clock in with LekkerWerk</p>

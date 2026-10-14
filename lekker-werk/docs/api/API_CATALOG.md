@@ -45,7 +45,7 @@ Source of truth: `server/auth/permissions.ts`.
 
 | Domain | Tables | Notes |
 |---|---|---|
-| Tenancy & auth | `companies`, `locations`, `users`, `sessions`, `password_resets` | `users.company_id` is null only for platform admins. |
+| Tenancy & auth | `companies`, `locations`, `users`, `sessions`, `password_resets` | `users.company_id` is null only for platform admins. `sessions.acting_company_id` = the tenant a SUPER_ADMIN is viewing (System portal). |
 | People | `employees`, `employee_locations`, `managers`, `manager_locations` | Employees are never hard-deleted (history). |
 | Devices | `clock_devices`, `employee_credentials` | One key per device; credentials are HMAC'd with a partial unique index on live values. |
 | Chat channels | `communication_channels`, `communication_accounts`, `link_codes`, `conversation_states` | One channel row per company per channel. |
@@ -53,6 +53,7 @@ Source of truth: `server/auth/permissions.ts`.
 | Integrations | `integrations`, `integration_syncs`, `imported_hours`, `integration_requests` | Syncs are queued and run by a worker. |
 | Time & pay | `employment_terms`, `leave_types`, `leave_requests`, `leave_ledger` (append-only balance ledger), `site_closures`, `public_holidays`, `pay_periods`, `pay_period_lines` (frozen totals), `pay_exports` | Hours are derived; pay rates stay in the payroll system. |
 | Billing | `subscriptions`, `payments` | PayFast. |
+| Hardware shop | `shop_products` (platform-wide catalogue, cents), `shop_orders`, `shop_order_items` (name/price copied at order time) | Once-off PayFast payments; an order is PAID only from a verified ITN. |
 | System | `company_settings`, `employee_data_permissions`, `audit_logs`, `notifications`, `rate_limits`, `demo_data_registry` (development only) | |
 
 Schema source: `db/schema/*.ts`. Migrations: `db/migrations/` (the baseline also creates the `clock_events` immutability trigger and a `uuidv7()` fallback for PostgreSQL < 18).
@@ -170,8 +171,8 @@ Format: **Today** = current implementation · **Perm** = permission · **DB** = 
 ### 6.1 Auth
 | Endpoint | Status | Today | Body / Query | Returns | DB |
 |---|---|---|---|---|---|
-| `POST /auth/signup` | ROUTE | `authentication.service.signup` | company, contact, password, `preferredChannel`, `locationMode`, `locations[]`, `timezone` | `{ redirect }` + session | W tx: `companies`, `users`, `locations`, `company_settings`, `subscriptions` (7-day trial), `communication_channels` ×2, `employee_data_permissions`, `work_schedules`, `audit_logs`; W `sessions` |
-| `POST /auth/login` | ROUTE | `login` | `{ identifier, password }` | `{ redirect }` + session | R `users`; W `users` (failed count, lockout, `last_login_at`), `sessions`, `audit_logs` |
+| `POST /auth/signup` | ROUTE | `authentication.service.signup` | company, contact, password, `preferredChannel`, `locationMode`, `locations[]`, `timezone` | `{ redirect }` + session | W tx: `companies`, `users` (role SUPER_ADMIN when the email is `@thewebdaddy.co.za`, see `lib/platform.ts`), `locations`, `company_settings`, `subscriptions` (7-day trial), `communication_channels` ×2, `employee_data_permissions`, `work_schedules`, `audit_logs`; W `sessions` |
+| `POST /auth/login` | ROUTE | `login` | `{ identifier, password }` | `{ redirect }` + session | R `users`; W `users` (failed count, lockout, `last_login_at`; promotes `@thewebdaddy.co.za` accounts to SUPER_ADMIN with a `platform.promoted` audit), `sessions`, `audit_logs` |
 | `POST /auth/logout` | ROUTE | `destroySession` | | | W `sessions` (delete) |
 | `POST /auth/forgot` | ROUTE | `requestPasswordReset` | `{ email }` | always 200 | R `users`; W `password_resets`; sends an email (provider not wired yet) |
 | `POST /auth/reset` | ROUTE | `resetPassword` | `{ token, password }` | | W tx: `users`, `password_resets.used_at`, `sessions` (delete all); W `audit_logs` |
@@ -195,18 +196,18 @@ Lockout: 5 failures → 15 minutes. Login is limited to 10/min per IP and signup
 ### 6.3 Locations
 | Endpoint | Status | Today | Perm | Body | DB |
 |---|---|---|---|---|---|
-| `GET /locations` | ROUTE | `listLocations` | locations:read | `includeInactive?` | R `locations` + active employee count |
+| `GET /locations` | ROUTE | `listLocations` | locations:read | `includeInactive?` | R `locations`, `employees`, `employee_locations`: active employee count where the location is the primary **or** an additional one, so one person counts at each of their locations |
 | `POST /locations` | ROUTE | `createLocation` | locations:write | name, address, lat, lng | plan limit (402); W `locations`, `audit_logs` |
 | `GET /locations/{id}` | ROUTE | `getLocation` | locations:read | | R `locations` |
 | `PATCH /locations/{id}` | ROUTE | `updateLocation` | locations:write | name, address, lat/lng, timezone, gps override, radius, status | W `locations`, `audit_logs` |
 | `GET /locations/{id}/managers` | ROUTE | `listLocationManagers` | locations:read | | R `manager_locations`, `managers`, `users` |
 | `PUT /locations/{id}/managers` | ROUTE | `setLocationManagers` | users:manage | `{ userIds[] }` | W tx `manager_locations` (replace), `audit_logs` |
-| `GET /locations/{id}/day?date=` | PAGE | `dashboard.service.getLocationDay` | dashboard:view | | R `employees`, `attendance_records` |
+| `GET /locations/{id}/day?date=` | PAGE | `dashboard.service.getLocationDay` | dashboard:view | | R `employees` (primary or additional location), `employee_locations`, `attendance_records` |
 
 ### 6.4 Employees
 | Endpoint | Status | Today | Perm | Body / Query | DB |
 |---|---|---|---|---|---|
-| `GET /employees` | ROUTE | `listEmployees` | employees:read | `q, locationId, department, managerId, status, page, pageSize` | R `employees`, `locations` |
+| `GET /employees` | ROUTE | `listEmployees` | employees:read | `q, locationId, department, managerId, status, page, pageSize` | R `employees`, `locations`, `employee_locations` (`locationId` matches primary or additional) |
 | `POST /employees` | ROUTE | `createEmployee` | employees:write | number, names, email, phone, dept, position, `locationId`, `extraLocationIds[]`, `managerId`, `preferredChannel`, `platformIdentifier` | plan limit (402); unique number per company (409); W tx `employees`, `employee_locations`, `audit_logs` |
 | `GET /employees/{id}` | ROUTE | `getEmployee` | employees:read | | R `employees`, `locations`, `users`, `employee_locations`, `communication_accounts` |
 | `PATCH /employees/{id}` | ROUTE | `updateEmployee` | employees:write | partial of create | W tx `employees`, `employee_locations` (replace), `audit_logs` |
@@ -233,11 +234,13 @@ Lockout: 5 failures → 15 minutes. Login is limited to 10/min per IP and signup
 | Endpoint | Status | Today | Perm | Body | DB |
 |---|---|---|---|---|---|
 | `GET /qr-codes?locationId` | ROUTE | `listQrCodes` | qr:manage | | R `qr_codes`, `locations` |
-| `POST /qr-codes` | ROUTE | `createQrCode` | qr:manage | `{ locationId, label, type: GENERAL\|CLOCK_IN\|CLOCK_OUT\|TEMPORARY, expiresAt? }` | W `qr_codes` (token sha256 + AES copy), `audit_logs` |
+| `POST /qr-codes` | ROUTE | `createQrCode` | qr:manage | `{ locationId, label, type: GENERAL\|CLOCK_IN\|CLOCK_OUT\|TEMPORARY, mode: STATIC\|DYNAMIC, rotationSeconds? (15–300, default 30), expiresAt? }` | W `qr_codes` (token sha256 + AES copy, `mode`, `rotation_seconds`), `audit_logs` |
 | `POST /qr-codes/{id}/regenerate` | ROUTE | `regenerateQrCode` | qr:manage | | W tx: disable old, insert new, `audit_logs` |
 | `POST /qr-codes/{id}/enabled` | ROUTE | `setQrEnabled` | qr:manage | `{ enabled }` | W `qr_codes`, `audit_logs`, `notifications` (QR_DISABLED) |
-| `GET /qr-codes/{id}/download?format=png\|svg` | ROUTE | `getQrAsset` | qr:manage | | R `qr_codes` (decrypts the token), `locations` |
-| `GET /q/{token}` (public) | ROUTE | `app/q/[token]` | none (rate limited per IP) | | R `qr_codes`, `communication_channels` → 302 to the `t.me/<bot>?start=q_<token>` or `wa.me` link |
+| `GET /qr-codes/{id}/download?format=png\|svg` | ROUTE | `getQrAsset` | qr:manage | | R `qr_codes` (decrypts the token; DYNAMIC renders its current rotation), `locations` |
+| `GET /qr-codes/{id}/display` | ROUTE (`/api/qr/{id}/display`) | `getQrDisplayLink` | qr:manage | | R `qr_codes` → `{ url }` of the display screen. 422 for STATIC codes |
+| `GET /qr-display/{key}` (public) | ROUTE (`/api/qr-display/{key}`) + PAGE `/qr-display/{key}` | `getDisplayFrame` | the 44-char key (HMAC of the code secret, so Regenerate revokes it); 30/min per IP | | R `qr_codes`, `locations` → `{ active, svg, rotatesAt, rotationSeconds, serverNow, label, locationName }`, `no-store` |
+| `GET /q/{token}` (public) | ROUTE | `app/q/[token]` | none (rate limited per IP) | | R `qr_codes` via `resolveQrToken(token, "scan")`: STATIC by sha256; DYNAMIC is a 47-char token (`D` + id + time window + HMAC) valid up to 120 s after it leaves the screen, and up to 15 min at the clock step (`processClock`); a DYNAMIC code's base secret never resolves. Then `communication_channels` → 302 to the `t.me/<bot>?start=q_<token>` or `wa.me` link |
 
 ### 6.7 Attendance
 | Endpoint | Status | Today | Perm | Body / Query | DB |
@@ -259,7 +262,7 @@ Schedule resolution for a day: employee assignment → location schedule → com
 ### 6.9 Dashboard and reports (read models)
 | Endpoint | Status | Today | Perm | Query | DB |
 |---|---|---|---|---|---|
-| `GET /dashboard/overview` | PAGE | `getDashboardOverview` | dashboard:view | `date, locationId, department, managerId` | R `locations`, `employees`, `clock_events` (current state), `attendance_records`, `work_schedules`, `clock_attempts`, `company_settings` |
+| `GET /dashboard/overview` | PAGE | `getDashboardOverview` | dashboard:view | `date, locationId, department, managerId` | R `locations`, `employees`, `employee_locations`, `clock_events` (current state), `attendance_records`, `work_schedules`, `clock_attempts`, `company_settings`. Per-location headcount and the location filter include additional locations; `totalEmployees` counts each person once |
 | `GET /dashboard/live` | PAGE | `getLiveBoard` | dashboard:view | filters | R `clock_events` (latest per employee + shift start), `clock_devices`, `employees`, `locations` |
 | `GET /dashboard/activity` | PAGE | `getRecentActivity` | dashboard:view | filters, `limit` | R `clock_events`, `employees`, `locations`, `clock_devices` |
 | `GET /dashboard/hours-by-employee` | PAGE | `getHoursByEmployee` | dashboard:view | `from, to`, filters | R `attendance_records`, `employees`, `locations` |
@@ -379,6 +382,26 @@ Salaried staff without overtime have overtime folded into NORMAL. Rates (1.5×, 
 |---|---|---|---|---|
 | `GET /health` | ROUTE | `app/api/health/route.ts` | none | `select 1` → `{ ok }` / 503. Used by the hosting platform's health check |
 
+### 6.20 Hardware shop (Devices → Buy hardware / Orders)
+| Endpoint | Status | Today | Perm | Body | DB |
+|---|---|---|---|---|---|
+| `GET /shop/products` | ROUTE | `shop.service.listShopProducts` | devices:manage | | R `shop_products` (active) |
+| `POST /shop/orders` | ROUTE (20/min) | `createShopOrder` | devices:manage | `{ items: [{ productId, quantity }], deliveryName, deliveryPhone, deliveryAddress, notes? }` | R `shop_products` (server-side prices; duplicate lines merged); W tx `shop_orders` (PENDING_PAYMENT, `m_payment_id` = `shop_…`), `shop_order_items`, `audit_logs`. Returns `{ orderId, action, fields }` (once-off PayFast form). Blocked like billing checkout when PayFast is live but APP_URL isn't public https |
+| `GET /shop/orders` | ROUTE | `listShopOrders` | devices:manage | | R `shop_orders`, `shop_order_items` (own company) |
+| `POST /shop/payfast/itn` | ROUTE (server-to-server) | `handleShopItn` | PayFast signature + source IP + validation call (`payfast.verifyItn`) + amount check | form body | W `shop_orders` (PAID once, replays ignored; CANCELLED on cancel), `audit_logs`; emails `OPS_EMAIL` |
+
+### 6.21 System portal (platform operators)
+Every route answers **404** to anyone who isn't SUPER_ADMIN (`requirePlatformApi` / `requirePlatformPage`) and is never blocked by a tenant's billing lock. Audit entries made while viewing a tenant keep the operator's `user_id` and add `metadata.viaSystemPortal`.
+
+| Endpoint | Status | Today | Perm | Body | DB |
+|---|---|---|---|---|---|
+| `GET /system/tenants?q` | ROUTE + PAGE `/system` | `platform.service.listTenants` | SUPER_ADMIN | | R `companies`, `subscriptions`, counts of `locations`, `employees`, `clock_devices` |
+| `GET /system/tenants/{id}` | ROUTE + PAGE | `getTenant` | SUPER_ADMIN | | R `companies`, `subscriptions`, `locations` (+ headcount), `clock_devices`, `users` |
+| `POST /system/act` | ROUTE (30/min) | `enterTenant` / `exitTenant` | SUPER_ADMIN | `{ companyId: uuid \| null }` | W `sessions.acting_company_id`, `audit_logs` (`platform.tenant_entered` / `platform.tenant_exited`). From the next request every route resolves `companyId` to that tenant |
+| `POST /system/tenants/{id}/devices/{deviceId}` | ROUTE | `setTenantDeviceEnabled` | SUPER_ADMIN | `{ enabled }` | W `clock_devices.enabled`, `audit_logs` |
+| `GET\|POST /system/shop/products`, `PATCH /system/shop/products/{id}` | ROUTE + PAGE `/system/shop` | `listAllShopProducts`, `createShopProduct`, `updateShopProduct` | SUPER_ADMIN | `{ name, description, category, price (rand), imageUrl?, active, inStock, sortOrder }` | R/W `shop_products`, `audit_logs` |
+| `GET /system/shop/orders`, `PATCH /system/shop/orders/{id}` | ROUTE | `listAllShopOrders`, `updateShopOrder` | SUPER_ADMIN | `{ status: PAID\|SHIPPED\|CANCELLED, trackingNote? }` | R `shop_orders`, `shop_order_items`, `companies`; W `shop_orders`, `audit_logs` |
+
 ## 7. Jobs (scheduled / background)
 
 | Job | Status | Today | Trigger | DB |
@@ -406,6 +429,7 @@ Salaried staff without overtime have overtime folded into NORMAL. Rates (1.5×, 
 
 | Date | Change |
 |---|---|
+| 2026-10-14 | <ul><li>Location headcounts (locations list, dashboard per-location and filters, location day, employee filter) include additional locations; the company total counts each person once</li><li>QR codes: STATIC / DYNAMIC mode, rotating HMAC tokens, public display screen and display link</li><li>Hardware shop: catalogue, orders, once-off PayFast checkout and ITN (`shop_*` tables)</li><li>System portal: SUPER_ADMIN auto-promotion for `@thewebdaddy.co.za`, tenant search and detail, act-as-tenant via `sessions.acting_company_id`, device enable/disable, shop catalogue and order fulfilment</li><li>Shared `payfast.verifyItn`. Migration `0001`</li></ul> |
 | 2026-10-13 (b) | Time & pay:<ul><li>employment terms</li><li>leave types (BCEA defaults), requests, decisions, cancellations, balance ledger, accruals and adjustments</li><li>"SICK" and leave balance in chat</li><li>South African public holidays with the Sunday→Monday rule</li><li>site closures</li><li>exceptions inbox and absence resolution</li><li>pay periods with live and frozen totals, lock/reopen, CSV export, and lock enforcement in the engine and corrections</li><li>attendance `trackFrom` and employment-date rules</li><li>`GET /health`</li></ul>Migrations replace `db:push` (`npm run migrate`, baseline with a uuidv7 fallback and the immutability trigger). Data export/import scripts for Railway. |
 | 2026-10-13 | Meal-break rule (auto-deduct unclocked lunch, configurable; `attendance_records.auto_break_minutes`). WhatsApp shared LekkerWerk number with tenant resolution, configurable Graph API version, failure-safe replies, dev logging sender. Pure parsers and unit tests for WhatsApp and Telegram, plus an integration test for the shared number (`npm run test:integration`). `attendance:recompute` script. |
 | 2026-10-10 | First version. Covers all existing routes, plus:<ul><li>a clocking engine that works with any device</li><li>the device API</li><li>device and credential admin</li><li>the chat simulator</li><li>Telegram polling mode and automatic bot setup</li><li>the South African integration catalog and integration requests</li><li>new dashboard read models (live board, activity, hours by employee)</li><li>demo seed/clean</li></ul> |

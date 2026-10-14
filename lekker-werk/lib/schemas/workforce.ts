@@ -49,6 +49,8 @@ export const qrCreateSchema = z.object({
   locationId: z.uuid(),
   label: z.string().trim().min(1).max(120),
   type: z.enum(["GENERAL", "CLOCK_IN", "CLOCK_OUT", "TEMPORARY"]).default("GENERAL"),
+  mode: z.enum(["STATIC", "DYNAMIC"]).default("STATIC"),
+  rotationSeconds: z.coerce.number().int().min(15).max(300).default(30),
   expiresAt: z.coerce.date().optional().nullable(),
 });
 

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   }
 
   const fail = () => NextResponse.redirect(new URL("/?qr=invalid", env.appUrl), 302);
-  const qr = await resolveQrToken(token);
+  const qr = await resolveQrToken(token, "scan");
   if (!qr || !qr.enabled || (qr.expiresAt && qr.expiresAt < new Date())) return fail();
 
   const channels = await db

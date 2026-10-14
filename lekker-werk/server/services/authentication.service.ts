@@ -20,6 +20,7 @@ import {
   verifyPassword,
 } from "@/lib/crypto";
 import { env } from "@/lib/env";
+import { isPlatformEmail } from "@/lib/platform";
 import {
   DEFAULT_COMPANY_SETTINGS,
   DEFAULT_SCHEDULE_DAYS,
@@ -64,7 +65,7 @@ export async function signup(input: SignupInput) {
         email: input.email,
         name: input.contactName,
         passwordHash,
-        role: "COMPANY_ADMIN",
+        role: isPlatformEmail(input.email) ? "SUPER_ADMIN" : "COMPANY_ADMIN",
       })
       .returning({ id: users.id });
 
@@ -155,14 +156,20 @@ export async function login(input: LoginInput) {
     throw generic;
   }
 
+  // Platform operators are promoted on every login, so existing accounts pick it up too.
+  const promote = isPlatformEmail(user.email) && user.role !== "SUPER_ADMIN";
+  const role = promote ? "SUPER_ADMIN" : user.role;
   await db
     .update(users)
-    .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() })
+    .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date(), role })
     .where(eq(users.id, user.id));
+  if (promote) {
+    await audit({ userId: user.id, companyId: user.companyId }, "platform.promoted", "user", user.id, { from: user.role });
+  }
 
   await createSession(user.id);
   await audit({ userId: user.id, companyId: user.companyId }, "auth.login", "user", user.id);
-  return { userId: user.id, role: user.role };
+  return { userId: user.id, role };
 }
 
 export async function requestPasswordReset(email: string) {

@@ -201,7 +201,7 @@ async function main() {
   // ---- QR codes + devices -------------------------------------------------------------------
   const qr: Record<string, { id: string; token: string }> = {};
   for (const [key, locationId] of Object.entries(site)) {
-    const row = await createQrCode(ctx, { locationId, label: "Entrance (demo)", type: "GENERAL" });
+    const row = await createQrCode(ctx, { locationId, label: "Entrance (demo)", type: "GENERAL", mode: "STATIC", rotationSeconds: 30 });
     await track("qr_code", row.id);
     qr[key] = { id: row.id, token: await getQrToken(ctx, row.id) };
   }

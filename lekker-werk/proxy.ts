@@ -28,5 +28,6 @@ export const config = {
     "/reports/:path*",
     "/settings/:path*",
     "/billing/:path*",
+    "/system/:path*",
   ],
 };

@@ -58,6 +58,10 @@ export const qrType = pgEnum("qr_type", [
   "TEMPORARY",
 ]);
 
+// STATIC: one token for life (printed). DYNAMIC: token rotates every rotation_seconds and is
+// shown on a screen, so a photo of it stops working within minutes.
+export const qrMode = pgEnum("qr_mode", ["STATIC", "DYNAMIC"]);
+
 export const attendanceStatus = pgEnum("attendance_status", [
   "PRESENT",
   "LATE",

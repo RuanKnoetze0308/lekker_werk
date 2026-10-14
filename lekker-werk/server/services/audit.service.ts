@@ -47,10 +47,17 @@ export type AuditAction =
   | "payroll.reopened"
   | "payroll.exported"
   | "auth.login"
-  | "auth.password_reset";
+  | "auth.password_reset"
+  | "platform.promoted"
+  | "platform.tenant_entered"
+  | "platform.tenant_exited"
+  | "shop.product_changed"
+  | "shop.order_created"
+  | "shop.order_paid"
+  | "shop.order_updated";
 
 export async function audit(
-  ctx: { userId: string | null; companyId: string | null },
+  ctx: { userId: string | null; companyId: string | null; impersonating?: boolean },
   action: AuditAction,
   entityType: string,
   entityId: string | null,
@@ -63,7 +70,8 @@ export async function audit(
     action,
     entityType,
     entityId,
-    metadata,
+    // A super admin working inside a tenant through the System portal is marked on every entry.
+    metadata: ctx.impersonating ? { ...metadata, viaSystemPortal: true } : metadata,
   });
 }
 

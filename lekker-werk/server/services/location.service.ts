@@ -40,7 +40,11 @@ export async function listLocations(ctx: AuthContext, opts: { includeInactive?: 
     .from(locations)
     .leftJoin(
       employees,
-      and(eq(employees.locationId, locations.id), eq(employees.status, "ACTIVE")),
+      and(
+        eq(employees.status, "ACTIVE"),
+        // Primary location or one of the employee's additional locations.
+        sql`(${employees.locationId} = ${locations.id} or exists (select 1 from employee_locations el where el.employee_id = ${employees.id} and el.location_id = ${locations.id}))`,
+      ),
     )
     .where(
       and(

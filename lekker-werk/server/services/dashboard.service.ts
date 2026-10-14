@@ -14,17 +14,26 @@ export interface DashboardFilters {
   managerId?: string;
 }
 
+/**
+ * An employee works at a location if it is their primary location or one of their
+ * additional locations (employee_locations). `match` is the right-hand side, e.g. sql`= ${id}`.
+ */
+function worksAt(alias: string, match: SQL): SQL {
+  const e = sql.raw(alias);
+  return sql`(${e}.location_id ${match} or exists (select 1 from employee_locations el where el.employee_id = ${e}.id and el.location_id ${match}))`;
+}
+
 function empConditions(ctx: AuthContext, f: DashboardFilters, alias = "e"): SQL {
   const parts: SQL[] = [sql.raw(`${alias}.company_id`).append(sql` = ${ctx.companyId}`)];
   const col = (c: string) => sql.raw(`${alias}.${c}`);
   if (ctx.locationScope !== null) {
     parts.push(
       ctx.locationScope.length
-        ? sql`${col("location_id")} in (${sql.join(ctx.locationScope.map((id) => sql`${id}::uuid`), sql`, `)})`
+        ? worksAt(alias, sql`in (${sql.join(ctx.locationScope.map((id) => sql`${id}::uuid`), sql`, `)})`)
         : sql`false`,
     );
   }
-  if (f.locationId) parts.push(sql`${col("location_id")} = ${f.locationId}`);
+  if (f.locationId) parts.push(worksAt(alias, sql`= ${f.locationId}`));
   if (f.department) parts.push(sql`${col("department")} = ${f.department}`);
   if (f.managerId) parts.push(sql`${col("manager_id")} = ${f.managerId}`);
   return sql.join(parts, sql` and `);
@@ -51,7 +60,8 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
   const perLocation = await rows(sql`
     select l.id as "locationId", l.name, count(e.id)::int as employees
     from locations l
-    left join employees e on e.location_id = l.id and e.status = 'ACTIVE'
+    left join employees e on e.company_id = l.company_id and e.status = 'ACTIVE'
+      and ${worksAt("e", sql`= l.id`)}
       ${f.department ? sql`and e.department = ${f.department}` : sql``}
       ${f.managerId ? sql`and e.manager_id = ${f.managerId}` : sql``}
     where l.company_id = ${ctx.companyId} and l.status = 'ACTIVE'
@@ -65,7 +75,13 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
       }
     group by l.id, l.name
     order by l.name`);
-  const totalEmployees = perLocation.reduce((n, r) => n + Number(r.employees), 0);
+  // Distinct people: someone working at two locations is in both rows above but counts once here.
+  const [total] = await rows(sql`
+    select count(*)::int as n from employees e
+    where e.status = 'ACTIVE' and ${cond}
+      and exists (select 1 from locations l where l.company_id = e.company_id and l.status = 'ACTIVE'
+        and ${worksAt("e", sql`= l.id`)})`);
+  const totalEmployees = Number(total.n);
 
   // Current state per employee (latest accepted event) — bounded to the max-shift window.
   let inNow = 0;
@@ -181,7 +197,7 @@ export async function getLocationDay(ctx: AuthContext, locationId: string, date?
       coalesce(a.late_minutes,0)::int as late, a.status
     from employees e
     left join attendance_records a on a.employee_id = e.id and a.work_date = ${day}
-    where e.company_id = ${ctx.companyId} and e.location_id = ${locationId} and e.status = 'ACTIVE'
+    where e.company_id = ${ctx.companyId} and ${worksAt("e", sql`= ${locationId}`)} and e.status = 'ACTIVE'
     order by e.last_name, e.first_name
     limit 500`);
 }

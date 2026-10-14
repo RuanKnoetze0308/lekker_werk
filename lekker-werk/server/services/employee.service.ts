@@ -28,7 +28,12 @@ export async function listEmployees(ctx: AuthContext, q: z.infer<typeof employee
     eq(employees.companyId, ctx.companyId),
     scope(ctx),
     q.status ? eq(employees.status, q.status) : undefined,
-    q.locationId ? eq(employees.locationId, q.locationId) : undefined,
+    q.locationId
+      ? or(
+          eq(employees.locationId, q.locationId),
+          sql`exists (select 1 from employee_locations el where el.employee_id = ${employees.id} and el.location_id = ${q.locationId})`,
+        )
+      : undefined,
     q.department ? eq(employees.department, q.department) : undefined,
     q.managerId ? eq(employees.managerId, q.managerId) : undefined,
     q.q

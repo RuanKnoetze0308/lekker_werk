@@ -87,6 +87,9 @@ export const sessions = pgTable(
     csrfToken: text("csrf_token").notNull(),
     userAgent: text("user_agent"),
     ip: text("ip"),
+    // SUPER_ADMIN only: the tenant this session is currently viewing (System portal).
+    // null = the user's own company.
+    actingCompanyId: uuid("acting_company_id").references(() => companies.id),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),
   },

@@ -14,6 +14,8 @@ export interface AuthContext {
   email: string;
   /** null = every location in the company. Managers are limited to assigned locations. */
   locationScope: string[] | null;
+  /** SUPER_ADMIN viewing another tenant through the System portal (companyId is that tenant). */
+  impersonating?: boolean;
   /** Trial / subscription state, resolved with the session so every request can enforce it. */
   billing: BillingAccess;
 }

@@ -7,6 +7,7 @@ import { Topbar } from "@/components/dashboard/Topbar";
 import { requirePageContext } from "@/server/auth/guards";
 import { can, type Permission } from "@/server/auth/permissions";
 import { getCompany } from "@/server/services/company.service";
+import { ExitTenantButton } from "./system/_components/SystemActions";
 
 const NAV: (NavItem & { permission: Permission })[] = [
   { label: "Dashboard", href: "/dashboard", icon: "dashboard", permission: "dashboard:view" },
@@ -32,8 +33,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const b = ctx.billing;
   const canBill = can(ctx.role, "settings:manage");
 
+  const superAdmin = ctx.role === "SUPER_ADMIN";
+
   // Trial or subscription lapsed: the only reachable page is Billing (for admins).
-  if (b.locked && !path.startsWith("/billing")) {
+  // Platform operators can still go everywhere so they can help the tenant.
+  if (b.locked && !superAdmin && !path.startsWith("/billing")) {
     if (canBill) redirect("/billing");
     return (
       <main className="flex min-h-screen items-center justify-center bg-soft-surface px-5">
@@ -48,6 +52,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }
 
   const items = NAV.filter((n) => can(ctx.role, n.permission)).map(({ permission: _p, ...item }) => item);
+  // Single entry point for platform operators; never rendered for anyone else.
+  if (superAdmin) items.push({ label: "System portal", href: "/system", icon: "system", group: "Platform" });
 
   const banner =
     b.state === "TRIALING"
@@ -65,6 +71,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <div className="pt-14 lg:pt-0">
           <Topbar name={ctx.name} role={ctx.role} />
         </div>
+        {ctx.impersonating && (
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-ink px-5 py-2.5 text-sm font-medium text-white">
+            <span>Viewing <strong>{company.name}</strong> as a super admin. Changes are logged under your name.</span>
+            <ExitTenantButton />
+          </div>
+        )}
         {banner && (
           <div className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm font-medium ${banner.tone}`}>
             <span>{banner.text}</span>

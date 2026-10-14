@@ -2,7 +2,7 @@ import "server-only";
 import { cookies, headers } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db/client";
-import { managerLocations, managers, sessions, users } from "@/db/schema";
+import { companies, managerLocations, managers, sessions, users } from "@/db/schema";
 import { randomToken, sha256 } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { getBillingAccess } from "../billing/billing.service";
@@ -57,6 +57,7 @@ export async function resolveSession(): Promise<ResolvedSession | null> {
     .select({
       sessionId: sessions.id,
       csrfToken: sessions.csrfToken,
+      actingCompanyId: sessions.actingCompanyId,
       userId: users.id,
       companyId: users.companyId,
       role: users.role,
@@ -69,7 +70,21 @@ export async function resolveSession(): Promise<ResolvedSession | null> {
     .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date())))
     .limit(1);
 
-  if (!row || row.status !== "ACTIVE" || !row.companyId) return null;
+  if (!row || row.status !== "ACTIVE") return null;
+
+  // Super admins can step into any tenant from the System portal; everyone else is pinned to
+  // their own company. The acting tenant lives on the session row, never in the request.
+  const superAdmin = row.role === "SUPER_ADMIN";
+  let companyId = row.companyId;
+  let impersonating = false;
+  if (superAdmin && row.actingCompanyId && row.actingCompanyId !== row.companyId) {
+    const [tenant] = await db.select({ id: companies.id }).from(companies).where(eq(companies.id, row.actingCompanyId));
+    if (tenant) {
+      companyId = tenant.id;
+      impersonating = true;
+    }
+  }
+  if (!companyId) return null;
 
   let locationScope: string[] | null = null;
   if (row.role === "MANAGER") {
@@ -81,7 +96,7 @@ export async function resolveSession(): Promise<ResolvedSession | null> {
     locationScope = rows.map((r) => r.locationId);
   }
 
-  const billing = await getBillingAccess(row.companyId);
+  const billing = await getBillingAccess(companyId);
 
   return {
     sessionId: row.sessionId,
@@ -89,7 +104,8 @@ export async function resolveSession(): Promise<ResolvedSession | null> {
     ctx: {
       billing,
       userId: row.userId,
-      companyId: row.companyId,
+      companyId,
+      impersonating,
       role: row.role,
       name: row.name,
       email: row.email,

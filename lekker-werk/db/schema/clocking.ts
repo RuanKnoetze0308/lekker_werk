@@ -18,6 +18,7 @@ import {
   attendanceStatus,
   clockEventType,
   clockSource,
+  qrMode,
   qrType,
   rejectionReason,
   validationStatus,
@@ -35,6 +36,9 @@ export const qrCodes = pgTable(
     locationId: uuid("location_id").notNull().references(() => locations.id),
     label: text("label").notNull(),
     type: qrType("type").notNull().default("GENERAL"),
+    mode: qrMode("mode").notNull().default("STATIC"),
+    // DYNAMIC only: how often the displayed code changes.
+    rotationSeconds: integer("rotation_seconds").notNull().default(30),
     // Opaque random token embedded in the QR. Resolved server-side; carries no data itself.
     tokenHash: text("token_hash").notNull(),
     // AES-GCM encrypted raw token so authorised admins can re-download / print the QR later.

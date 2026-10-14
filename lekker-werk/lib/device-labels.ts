@@ -33,3 +33,24 @@ export function sourceLabel(source: string, deviceName?: string | null) {
       return source.toLowerCase();
   }
 }
+
+export const SHOP_CATEGORY_LABEL = {
+  RFID: "RFID cards & bands",
+  TABLET: "Tablets & kiosks",
+  MOUNT: "Stands & mounts",
+  NFC: "NFC tags",
+  BIOMETRIC: "Biometric",
+  OTHER: "Other",
+} as const;
+
+export const SHOP_ORDER_STATUS_LABEL = {
+  PENDING_PAYMENT: "Awaiting payment",
+  PAID: "Paid · preparing",
+  SHIPPED: "Shipped",
+  CANCELLED: "Cancelled",
+} as const;
+
+/** Cents → "R 1 299.00" */
+export function formatRand(cents: number) {
+  return `R ${(cents / 100).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
