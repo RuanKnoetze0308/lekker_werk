@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { ZodError, type ZodType } from "zod";
 import { AppError, Errors } from "../errors";
 import { CSRF_COOKIE, SESSION_COOKIE } from "../auth/session";
-import { safeEqual } from "@/lib/crypto";
+import { randomToken, safeEqual } from "@/lib/crypto";
+import { diagnose } from "./diagnose";
 import { rateLimit } from "../services/rate-limit.service";
 import { ConfigError, env } from "@/lib/env";
 
@@ -31,14 +32,23 @@ function toErrorResponse(err: unknown) {
       { status: 422 },
     );
   }
-  if (err instanceof ConfigError) {
-    console.error("Configuration error", err.message);
-    return NextResponse.json({ error: { code: "SERVER_MISCONFIGURED", message: err.message } }, { status: 503 });
-  }
-  console.error("Unhandled API error", err);
+  // Unexpected: give it a diagnostic code (docs/ERROR_CODES.md) and a ref to find the full
+  // error in the server log. The browser never sees SQL, stack traces or secrets.
+  const { diagnostic, hint } = diagnose(err);
+  const ref = randomToken(6);
+  console.error(`[${diagnostic}] ref=${ref} ${err instanceof ConfigError ? "Configuration error" : "Unhandled API error"}`, err);
+  const config = err instanceof ConfigError;
   return NextResponse.json(
-    { error: { code: "INTERNAL", message: "Something went wrong." } },
-    { status: 500 },
+    {
+      error: {
+        code: config ? "SERVER_MISCONFIGURED" : "INTERNAL",
+        diagnostic,
+        ref,
+        hint,
+        message: `${config ? err.message : "Something went wrong."} (error ${diagnostic}, ref ${ref})`,
+      },
+    },
+    { status: config ? 503 : 500 },
   );
 }
 

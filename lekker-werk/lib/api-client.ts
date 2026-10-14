@@ -27,6 +27,10 @@ export async function api<T = unknown>(
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // Server faults (5xx) carry a diagnostic code (docs/ERROR_CODES.md); surface them in dev tools.
+    if (res.status >= 500 && json.error) {
+      console.error(`[LekkerWerk API] ${options.method ?? (options.body ? "POST" : "GET")} ${url} → ${res.status}`, json.error);
+    }
     const fieldErrors: Record<string, string> = {};
     for (const d of (json.error?.details as { path: string; message: string }[] | undefined) ?? []) {
       if (d?.path) fieldErrors[d.path] = d.message;

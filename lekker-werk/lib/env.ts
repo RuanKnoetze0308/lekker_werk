@@ -1,11 +1,21 @@
 import "server-only";
 
-/** A server setting is missing or invalid. Shown to the user as a 503 with this message (never a value). */
-export class ConfigError extends Error {}
+/**
+ * A server setting is missing or invalid. Shown to the user as a 503 with this message (never a
+ * value). `diagnostic` is a stable code from docs/ERROR_CODES.md.
+ */
+export class ConfigError extends Error {
+  constructor(
+    public readonly diagnostic: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 function required(name: string): string {
   const value = process.env[name];
-  if (!value) throw new ConfigError(`Server setup problem: the ${name} environment variable is not set.`);
+  if (!value) throw new ConfigError(`LW-CFG-01-${name}`, `Server setup problem: the ${name} environment variable is not set.`);
   return value;
 }
 

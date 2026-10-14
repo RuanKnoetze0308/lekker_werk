@@ -60,7 +60,7 @@ export function safeEqual(a: string, b: string): boolean {
 function key(): Buffer {
   const buf = Buffer.from(env.encryptionKey, "base64");
   if (buf.length !== 32) {
-    throw new ConfigError(`Server setup problem: APP_ENCRYPTION_KEY must be 32 bytes, base64 encoded (it decodes to ${buf.length} bytes).`);
+    throw new ConfigError("LW-CFG-02", `Server setup problem: APP_ENCRYPTION_KEY must be 32 bytes, base64 encoded (it decodes to ${buf.length} bytes).`);
   }
   return buf;
 }
