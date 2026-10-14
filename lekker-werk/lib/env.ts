@@ -1,8 +1,11 @@
 import "server-only";
 
+/** A server setting is missing or invalid. Shown to the user as a 503 with this message (never a value). */
+export class ConfigError extends Error {}
+
 function required(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  if (!value) throw new ConfigError(`Server setup problem: the ${name} environment variable is not set.`);
   return value;
 }
 

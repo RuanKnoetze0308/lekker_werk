@@ -6,7 +6,7 @@ import { AppError, Errors } from "../errors";
 import { CSRF_COOKIE, SESSION_COOKIE } from "../auth/session";
 import { safeEqual } from "@/lib/crypto";
 import { rateLimit } from "../services/rate-limit.service";
-import { env } from "@/lib/env";
+import { ConfigError, env } from "@/lib/env";
 
 export function ok<T>(data: T, init?: ResponseInit) {
   return NextResponse.json({ data }, init);
@@ -30,6 +30,10 @@ function toErrorResponse(err: unknown) {
       },
       { status: 422 },
     );
+  }
+  if (err instanceof ConfigError) {
+    console.error("Configuration error", err.message);
+    return NextResponse.json({ error: { code: "SERVER_MISCONFIGURED", message: err.message } }, { status: 503 });
   }
   console.error("Unhandled API error", err);
   return NextResponse.json(
