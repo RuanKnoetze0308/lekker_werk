@@ -1,4 +1,5 @@
 import "server-only";
+import { csvCell } from "@/lib/csv";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
@@ -306,10 +307,6 @@ export async function reopenPayPeriod(ctx: AuthContext, id: string, note: string
   });
 }
 
-const csvCell = (v: string | number) => {
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 const hours = (minutes: number) => (minutes / 60).toFixed(2);
 
 /**

@@ -122,6 +122,10 @@ export interface CheckoutRequest {
 export function assertCheckoutAllowed() {
   const pf = env.payfast;
   if (!pf.merchantId || !pf.merchantKey) throw new AppError(503, "PAYFAST_NOT_CONFIGURED", "Payments are not configured yet.");
+  // Without a passphrase the signature is an md5 of public fields that anyone can compute.
+  if (pf.mode === "live" && !pf.passphrase) {
+    throw new AppError(503, "PAYFAST_NOT_CONFIGURED", "Live payments need PAYFAST_PASSPHRASE (set the same passphrase in PayFast's dashboard).");
+  }
   const url = new URL(env.appUrl);
   const publicHttps = url.protocol === "https:" && !["localhost", "127.0.0.1"].includes(url.hostname);
   // PayFast can't call back to localhost, so a live payment would succeed but never be recorded.

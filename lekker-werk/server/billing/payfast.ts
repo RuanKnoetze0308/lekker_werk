@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { safeEqual } from "@/lib/crypto";
 import { lookup } from "node:dns/promises";
 import { env } from "@/lib/env";
 import { AppError } from "../errors";
@@ -81,7 +82,7 @@ export function itnParamString(pairs: [string, string][], withPassphrase: boolea
 
 export function verifyItnSignature(pairs: [string, string][]): boolean {
   const given = pairs.find(([k]) => k === "signature")?.[1] ?? "";
-  return given !== "" && md5(itnParamString(pairs, true)) === given.toLowerCase();
+  return given !== "" && safeEqual(md5(itnParamString(pairs, true)), given.toLowerCase());
 }
 
 const PAYFAST_HOSTS = ["www.payfast.co.za", "sandbox.payfast.co.za", "w1w.payfast.co.za", "w2w.payfast.co.za"];
@@ -114,6 +115,7 @@ export async function verifyItn(rawBody: string, ip: string) {
   const pairs = [...new URLSearchParams(rawBody).entries()] as [string, string][];
   const get = (k: string) => pairs.find(([key]) => key === k)?.[1] ?? "";
   const pf = env.payfast;
+  if (pf.mode === "live" && !pf.passphrase) throw new AppError(503, "PAYFAST_NOT_CONFIGURED", "PAYFAST_PASSPHRASE is not set");
   if (!verifyItnSignature(pairs)) throw new AppError(400, "BAD_SIGNATURE", "Invalid signature");
   if (get("merchant_id") !== pf.merchantId) throw new AppError(400, "BAD_MERCHANT", "Wrong merchant");
   if (!pf.skipRemoteChecks) {

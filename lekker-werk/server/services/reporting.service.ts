@@ -1,4 +1,5 @@
 import "server-only";
+import { csvCell } from "@/lib/csv";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { assertCan, assertLocationAccess, type AuthContext } from "../auth/context";
@@ -127,11 +128,5 @@ export async function runReport(ctx: AuthContext, p: ReportParams): Promise<Repo
 }
 
 export function toCsv(result: ReportResult): string {
-  const esc = (v: string | number | null) => {
-    let s = v == null ? "" : String(v);
-    // Neutralise spreadsheet formula injection.
-    if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [result.columns, ...result.rows].map((row) => row.map(esc).join(",")).join("\r\n");
+  return [result.columns, ...result.rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
