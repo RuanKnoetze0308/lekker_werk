@@ -8,6 +8,7 @@ import { randomToken, safeEqual } from "@/lib/crypto";
 import { diagnose } from "./diagnose";
 import { rateLimit } from "../services/rate-limit.service";
 import { ConfigError, env } from "@/lib/env";
+import { clientIpFrom } from "./client-ip";
 
 export function ok<T>(data: T, init?: ResponseInit) {
   return NextResponse.json({ data }, init);
@@ -53,7 +54,7 @@ function toErrorResponse(err: unknown) {
 }
 
 function clientIp(req: NextRequest) {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  return clientIpFrom(req.headers);
 }
 
 /** Same-origin check: blocks cross-site form posts even before the CSRF token check. */

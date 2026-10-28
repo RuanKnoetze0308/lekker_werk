@@ -7,6 +7,7 @@ import { randomToken, sha256 } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { getBillingAccess } from "../billing/billing.service";
 import type { AuthContext } from "./context";
+import { clientIpFrom } from "../http/client-ip";
 
 export const SESSION_COOKIE = "lw_session";
 export const CSRF_COOKIE = "lw_csrf";
@@ -17,13 +18,14 @@ export async function createSession(userId: string) {
   const csrfToken = randomToken(24);
   const h = await headers();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const ip = clientIpFrom(h);
 
   await db.insert(sessions).values({
     userId,
     tokenHash: sha256(token),
     csrfToken,
     userAgent: h.get("user-agent")?.slice(0, 255) ?? null,
-    ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ip: ip === "unknown" ? null : ip,
     expiresAt,
   });
 

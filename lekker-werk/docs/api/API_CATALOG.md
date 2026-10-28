@@ -24,7 +24,7 @@
 | Ids | UUID v7 (`uuidv7()` in Postgres 18): time-ordered, safe to expose. |
 | Pagination | `page`/`pageSize` (offset) for admin lists; keyset (`before=<occurredAt>`) for event history. |
 | Idempotency | Chat: provider message id. Devices: `punchId` (unique per device). Stored on `clock_attempts.idempotency_key`. |
-| Rate limits | Per IP and per route today (`rate_limits` table). Move to Redis or API Management policies at scale. |
+| Rate limits | Per IP and per route today (`rate_limits` table). The IP is the `X-Forwarded-For` entry `TRUSTED_PROXY_HOPS` from the right (`server/http/client-ip.ts`), never the caller-supplied leftmost one. Move to Redis or API Management policies at scale. |
 | Audit | Every admin mutation writes `audit_logs` (actor, action, entity, metadata). Secrets and credential values are never logged. |
 | Secrets | Integration/channel credentials are AES-256-GCM encrypted (`APP_ENCRYPTION_KEY`) and never returned. Card/PIN values are HMAC-SHA256'd and never stored in plain text. |
 
@@ -430,7 +430,7 @@ SUPER_ADMIN is granted only from the command line (`npm run platform:admin -- gr
 
 | Date | Change |
 |---|---|
-| 2026-10-28 | Security hardening:<ul><li>SUPER_ADMIN no longer granted by email domain at signup/login; `platform:admin` script instead</li></ul> |
+| 2026-10-28 | Security hardening:<ul><li>SUPER_ADMIN no longer granted by email domain at signup/login; `platform:admin` script instead</li><li>Client IP (rate limits, PayFast source check, sessions, devices) taken from the trusted end of `X-Forwarded-For`</li></ul> |
 | 2026-10-14 | <ul><li>Location headcounts (locations list, dashboard per-location and filters, location day, employee filter) include additional locations; the company total counts each person once</li><li>QR codes: STATIC / DYNAMIC mode, rotating HMAC tokens, public display screen and display link</li><li>Hardware shop: catalogue, orders, once-off PayFast checkout and ITN (`shop_*` tables)</li><li>System portal: SUPER_ADMIN auto-promotion for `@thewebdaddy.co.za`, tenant search and detail, act-as-tenant via `sessions.acting_company_id`, device enable/disable, shop catalogue and order fulfilment</li><li>Shared `payfast.verifyItn`. Migration `0001`</li></ul> |
 | 2026-10-13 (b) | Time & pay:<ul><li>employment terms</li><li>leave types (BCEA defaults), requests, decisions, cancellations, balance ledger, accruals and adjustments</li><li>"SICK" and leave balance in chat</li><li>South African public holidays with the Sunday→Monday rule</li><li>site closures</li><li>exceptions inbox and absence resolution</li><li>pay periods with live and frozen totals, lock/reopen, CSV export, and lock enforcement in the engine and corrections</li><li>attendance `trackFrom` and employment-date rules</li><li>`GET /health`</li></ul>Migrations replace `db:push` (`npm run migrate`, baseline with a uuidv7 fallback and the immutability trigger). Data export/import scripts for Railway. |
 | 2026-10-13 | Meal-break rule (auto-deduct unclocked lunch, configurable; `attendance_records.auto_break_minutes`). WhatsApp shared LekkerWerk number with tenant resolution, configurable Graph API version, failure-safe replies, dev logging sender. Pure parsers and unit tests for WhatsApp and Telegram, plus an integration test for the shared number (`npm run test:integration`). `attendance:recompute` script. |

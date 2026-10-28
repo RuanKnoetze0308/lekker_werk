@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { communicationChannels } from "@/db/schema";
 import { channelHandle } from "@/server/services/company.service";
 import { env } from "@/lib/env";
+import { clientIpFrom } from "@/server/http/client-ip";
 import { rateLimit } from "@/server/services/rate-limit.service";
 import { resolveQrToken } from "@/server/services/qr.service";
 
@@ -14,7 +15,7 @@ import { resolveQrToken } from "@/server/services/qr.service";
  */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIpFrom(req.headers);
   if (!(await rateLimit(`qr-scan:${ip}`, 60, 60))) {
     return new NextResponse("Too many requests", { status: 429 });
   }
