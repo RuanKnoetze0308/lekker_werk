@@ -1,18 +1,17 @@
 import "server-only";
-import { assertPublicHttpsUrl } from "@/lib/ssrf";
+import { assertPublicHttpsUrl, publicFetch } from "@/lib/ssrf";
 import { AppError } from "../../errors";
 import type { IntegrationProviderImpl, NormalizedHours } from "../types";
 
 async function get(s: { config: Record<string, string>; credentials: Record<string, string> }, params: Record<string, string>) {
   const url = await assertPublicHttpsUrl(s.config.apiUrl);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await fetch(url, {
+  const res = await publicFetch(url, {
     headers: { "x-api-key": s.credentials.apiKey ?? "", accept: "application/json" },
-    redirect: "error", // a redirect could bounce us to an internal address
-    signal: AbortSignal.timeout(20_000),
+    timeoutMs: 20_000,
   });
   if (!res.ok) throw new AppError(502, "INTEGRATION_ERROR", `API responded ${res.status}`);
-  return res.json() as Promise<unknown>;
+  return res.json();
 }
 
 /** Expects a JSON array (or { data: [] }) of rows; field names are configurable. */

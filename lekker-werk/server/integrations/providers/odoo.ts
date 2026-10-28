@@ -1,15 +1,14 @@
 import "server-only";
-import { assertPublicHttpsUrl } from "@/lib/ssrf";
+import { assertPublicHttpsUrl, publicFetch } from "@/lib/ssrf";
 import { AppError } from "../../errors";
 import type { IntegrationProviderImpl, NormalizedHours, ProviderSettings } from "../types";
 
 async function rpc(base: URL, service: string, method: string, args: unknown[]) {
-  const res = await fetch(new URL("/jsonrpc", base), {
+  const res = await publicFetch(new URL("/jsonrpc", base), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method: "call", params: { service, method, args }, id: 1 }),
-    redirect: "error",
-    signal: AbortSignal.timeout(30_000),
+    timeoutMs: 30_000,
   });
   const json = (await res.json()) as { result?: unknown; error?: { data?: { message?: string } } };
   if (json.error) throw new AppError(502, "INTEGRATION_ERROR", json.error.data?.message ?? "Odoo error");
