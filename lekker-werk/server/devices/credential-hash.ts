@@ -14,15 +14,35 @@ export function normaliseCredential(kind: CredentialKind, raw: string): string {
   return v;
 }
 
+function hmac(key: string, companyId: string, kind: CredentialKind, raw: string) {
+  return createHmac("sha256", key).update(`${companyId}:${kind}:${normaliseCredential(kind, raw)}`).digest("hex");
+}
+
 /**
  * Keyed hash: exact-match lookups work, but a database leak alone doesn't reveal card numbers
  * or PINs (a plain sha256 of a 4-digit PIN would be reversible in milliseconds).
  * Scoped by company so the same card at two companies doesn't produce the same hash.
+ *
+ * Keyed by CREDENTIAL_HASH_KEY when set, so the encryption key can be rotated without
+ * re-enrolling every card; otherwise (older installs) by APP_ENCRYPTION_KEY.
  */
 export function hashCredential(companyId: string, kind: CredentialKind, raw: string): string {
-  return createHmac("sha256", `credential:${env.encryptionKey}`)
-    .update(`${companyId}:${kind}:${normaliseCredential(kind, raw)}`)
-    .digest("hex");
+  const key = env.credentialHashKey;
+  return key ? hmac(`credential:v2:${key}`, companyId, kind, raw) : legacyHash(companyId, kind, raw);
+}
+
+function legacyHash(companyId: string, kind: CredentialKind, raw: string) {
+  return hmac(`credential:${env.encryptionKey}`, companyId, kind, raw);
+}
+
+/**
+ * Every hash a stored credential may have: the current one first, then the pre-CREDENTIAL_HASH_KEY
+ * one. Lookups match either, and identity.ts moves a legacy match to the current hash.
+ */
+export function credentialHashes(companyId: string, kind: CredentialKind, raw: string): string[] {
+  const current = hashCredential(companyId, kind, raw);
+  if (!env.credentialHashKey) return [current];
+  return [current, legacyHash(companyId, kind, raw)];
 }
 
 export function credentialHint(kind: CredentialKind, raw: string): string {

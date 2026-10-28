@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { employeeCredentials, employees } from "@/db/schema";
 import type { z } from "zod";
@@ -7,7 +7,7 @@ import type { credentialIssueSchema } from "@/lib/schemas/devices";
 import { assertCan, assertLocationAccess, type AuthContext } from "../auth/context";
 import { Errors } from "../errors";
 import { audit } from "../services/audit.service";
-import { credentialHint, hashCredential } from "./credential-hash";
+import { credentialHashes, credentialHint, hashCredential } from "./credential-hash";
 
 async function loadEmployee(ctx: AuthContext, employeeId: string) {
   const [emp] = await db
@@ -54,7 +54,7 @@ export async function issueCredential(
       and(
         eq(employeeCredentials.companyId, ctx.companyId),
         eq(employeeCredentials.kind, input.kind),
-        eq(employeeCredentials.valueHash, valueHash),
+        inArray(employeeCredentials.valueHash, credentialHashes(ctx.companyId, input.kind, input.value)),
         isNull(employeeCredentials.revokedAt),
       ),
     );

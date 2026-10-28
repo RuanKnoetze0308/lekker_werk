@@ -26,6 +26,13 @@ export const env = {
   get encryptionKey() {
     return required("APP_ENCRYPTION_KEY");
   },
+  /**
+   * Key for card / PIN hashes (separate from APP_ENCRYPTION_KEY so either can be rotated).
+   * Optional: without it the encryption key is used, as before.
+   */
+  get credentialHashKey() {
+    return process.env.CREDENTIAL_HASH_KEY ?? "";
+  },
   get cronSecret() {
     return required("CRON_SECRET");
   },

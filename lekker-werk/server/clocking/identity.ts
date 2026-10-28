@@ -1,8 +1,8 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { communicationAccounts, employeeCredentials } from "@/db/schema";
-import { hashCredential } from "../devices/credential-hash";
+import { credentialHashes } from "../devices/credential-hash";
 import type { ClockIdentity, RejectionReasonCode } from "./types";
 
 export interface ResolvedIdentity {
@@ -43,18 +43,23 @@ const resolvers: { [K in ClockIdentity["kind"]]: Resolver<K> } = {
   },
 
   async CREDENTIAL(companyId, identity) {
+    const [current, ...legacy] = credentialHashes(companyId, identity.credentialKind, identity.value);
     const [cred] = await db
-      .select({ id: employeeCredentials.id, employeeId: employeeCredentials.employeeId })
+      .select({ id: employeeCredentials.id, employeeId: employeeCredentials.employeeId, valueHash: employeeCredentials.valueHash })
       .from(employeeCredentials)
       .where(
         and(
           eq(employeeCredentials.companyId, companyId),
           eq(employeeCredentials.kind, identity.credentialKind),
-          eq(employeeCredentials.valueHash, hashCredential(companyId, identity.credentialKind, identity.value)),
+          inArray(employeeCredentials.valueHash, [current, ...legacy]),
           isNull(employeeCredentials.revokedAt),
         ),
       );
     if (!cred) return "CREDENTIAL_UNKNOWN";
+    // Matched by the old key: store the current hash, so the old key can eventually be retired.
+    if (cred.valueHash !== current) {
+      await db.update(employeeCredentials).set({ valueHash: current }).where(eq(employeeCredentials.id, cred.id));
+    }
     return { employeeId: cred.employeeId, communicationAccountId: null, credentialId: cred.id };
   },
 };
