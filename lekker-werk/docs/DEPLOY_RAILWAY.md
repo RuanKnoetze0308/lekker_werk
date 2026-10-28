@@ -33,10 +33,13 @@ These files are **not** pushed, on purpose, because they are git-ignored:
 
 | Variable | Value |
 |---|---|
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`, the reference to the Railway database |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`, the reference to the Railway database (private network, already encrypted). Never use the public `DATABASE_PUBLIC_URL` for the app; if you must reach a database over the internet, add `?sslmode=require` |
 | `APP_ENCRYPTION_KEY` | **Copy exactly from your `.env.local`.** QR codes, bot tokens and integration secrets are encrypted with it. A different key makes the copied data unreadable. |
 | `APP_URL` | Your Railway URL, e.g. `https://lekkerwerk-production.up.railway.app` (no trailing slash) |
-| `CRON_SECRET` | A new long random value |
+| `CRON_SECRET` | A new long random value (at least 32 random bytes: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) |
+| `PAYFAST_PASSPHRASE` | **Required for live payments.** Set the same passphrase in PayFast → Settings → Developer settings |
+| `TRUSTED_PROXY_HOPS` | Leave unset (1 = Railway's edge). See §7 |
+| `CREDENTIAL_HASH_KEY` | Optional, recommended for new installs: 32 random bytes, base64. Never change it once set |
 | `NODE_ENV` | `production` |
 | `ENABLE_SIMULATORS` | `1` while you demo, so the chat simulator and device "Test tap" work online. Remove it before real customers. |
 | `PAYFAST_MODE` | `sandbox` until you are ready to take real money. On a public https URL, live checkout is no longer blocked. |
@@ -84,6 +87,16 @@ Maintenance does the following:
 Once deployed, open Settings → Communication and paste your bot token there.
 - Because `APP_URL` is public https, the bot switches to **webhook mode** automatically. `npm run telegram:poll` isn't needed.
 - First send `/revoke` to @BotFather to get a fresh token, because the old one was shared in a chat.
+
+## 7. Security after the first deploy
+
+1. **Make yourself platform admin.** Sign up normally with your `@thewebdaddy.co.za` address, then run `railway run npm run platform:admin -- grant you@thewebdaddy.co.za` (or the same command in the service shell). Signup and login never grant it. `npm run platform:admin -- list` shows who has it.
+2. **Turn on two-step login:** System portal → Security. Keep the backup codes in your password manager. Lost both? `npm run platform:admin -- reset-2fa <email>`.
+3. **Check the client IP is right** (it drives every rate limit): sign in, then in the database run `select ip from sessions order by created_at desc limit 1;`. It must be your own public IP. If it shows a Railway/Fastly address instead, set `TRUSTED_PROXY_HOPS=2` and check again.
+4. **Live payments:** `PAYFAST_PASSPHRASE` must be set (live checkout refuses to run without it).
+5. **Remove `ENABLE_SIMULATORS`** before real customers.
+
+The full checklist, including things to do outside the code (GitHub, Railway and PayFast accounts, backups), is in [SECURITY.md](SECURITY.md).
 
 ## Later schema changes
 
