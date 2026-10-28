@@ -32,9 +32,18 @@ import { createTrial } from "../billing/billing.service";
 import { ensureLeaveTypes } from "../time/leave.service";
 import { sendEmail } from "./notification.service";
 import { createSession } from "../auth/session";
+import { clientIpFrom } from "../http/client-ip";
+import { isRateLimited, recordHit } from "./rate-limit.service";
+import { headers } from "next/headers";
 
-const MAX_FAILED = 5;
-const LOCK_MS = 15 * 60 * 1000;
+/**
+ * Failed sign-ins are throttled per identifier (what was typed, so unknown and real accounts
+ * behave the same and nobody can probe which exist):
+ * - from one IP: 5 per 15 minutes, which stops password guessing;
+ * - from all IPs: 30 per hour, which stops a botnet without letting one attacker lock out a user.
+ */
+const FAIL_PER_IP = { limit: 5, windowSeconds: 15 * 60 };
+const FAIL_PER_ACCOUNT = { limit: 30, windowSeconds: 3600 };
 
 export async function signup(input: SignupInput) {
   const exists = await db.select({ id: users.id }).from(users).where(eq(users.email, input.email)).limit(1);
@@ -128,6 +137,16 @@ export async function signup(input: SignupInput) {
 
 export async function login(input: LoginInput) {
   const identifier = input.identifier.trim().toLowerCase();
+  const ip = clientIpFrom(await headers());
+  const ipKey = `login-fail:${identifier}:${ip}`;
+  const accountKey = `login-fail:${identifier}`;
+  if (
+    (await isRateLimited(ipKey, FAIL_PER_IP.limit, FAIL_PER_IP.windowSeconds)) ||
+    (await isRateLimited(accountKey, FAIL_PER_ACCOUNT.limit, FAIL_PER_ACCOUNT.windowSeconds))
+  ) {
+    throw new AppError(429, "TOO_MANY_ATTEMPTS", "Too many sign-in attempts. Wait a few minutes and try again.");
+  }
+
   const [user] = await db
     .select()
     .from(users)
@@ -137,23 +156,10 @@ export async function login(input: LoginInput) {
   // Always do a hash comparison so response time does not reveal valid accounts.
   const valid = await verifyPassword(input.password, user?.passwordHash ?? DUMMY_HASH);
 
-  const generic = new AppError(401, "BAD_CREDENTIALS", "Incorrect email/username or password.");
-  if (!user) throw generic;
-
-  if (user.lockedUntil && user.lockedUntil > new Date()) {
-    throw new AppError(423, "LOCKED", "Too many attempts. Try again in a few minutes.");
-  }
-
-  if (!valid || user.status !== "ACTIVE") {
-    const failed = user.failedLoginCount + 1;
-    await db
-      .update(users)
-      .set({
-        failedLoginCount: failed >= MAX_FAILED ? 0 : failed,
-        lockedUntil: failed >= MAX_FAILED ? new Date(Date.now() + LOCK_MS) : null,
-      })
-      .where(eq(users.id, user.id));
-    throw generic;
+  if (!user || !valid || user.status !== "ACTIVE") {
+    await recordHit(ipKey, FAIL_PER_IP.windowSeconds);
+    await recordHit(accountKey, FAIL_PER_ACCOUNT.windowSeconds);
+    throw new AppError(401, "BAD_CREDENTIALS", "Incorrect email/username or password.");
   }
 
   await db
