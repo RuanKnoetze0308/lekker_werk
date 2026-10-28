@@ -10,6 +10,8 @@ export function LoginForm({ onSwitch }: { onSwitch: (m: "signup" | "forgot") => 
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Accounts with two-step login: the password was right, now the authenticator code.
+  const [twoStep, setTwoStep] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -17,19 +19,47 @@ export function LoginForm({ onSwitch }: { onSwitch: (m: "signup" | "forgot") => 
     setPending(true);
     setError(null);
     try {
-      const { redirect } = await api<{ redirect: string }>("/api/auth/login", {
-        body: { identifier: form.get("identifier"), password: form.get("password") },
-      });
-      router.push(redirect);
+      const res = twoStep
+        ? await api<{ redirect: string }>("/api/auth/two-step", { body: { code: form.get("code") } })
+        : await api<{ redirect?: string; twoStep?: boolean }>("/api/auth/login", {
+            body: { identifier: form.get("identifier"), password: form.get("password") },
+          });
+      if ("twoStep" in res && res.twoStep) {
+        setTwoStep(true);
+        setPending(false);
+        return;
+      }
+      router.push(res.redirect ?? "/dashboard");
       router.refresh();
     } catch (err) {
+      // 401 on the code step = the challenge expired: start again from the password.
+      if (err instanceof ApiError && err.status === 401 && twoStep) setTwoStep(false);
       setError(err instanceof ApiError ? err.message : "Could not log in.");
       setPending(false);
     }
   }
 
+  if (twoStep) {
+    return (
+      // Own key: otherwise React reuses the password input for the code field and shows the password.
+      <form key="two-step" onSubmit={onSubmit} className="flex flex-col gap-4">
+        <p className="text-sm text-muted">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+        <Field label="Code">
+          <Input name="code" inputMode="numeric" autoComplete="one-time-code" autoFocus required />
+        </Field>
+        <FormMessage error={error} />
+        <Button type="submit" disabled={pending} className="w-full">
+          {pending ? "Checking…" : "Continue"}
+        </Button>
+        <button type="button" onClick={() => { setTwoStep(false); setError(null); }} className="text-sm text-muted hover:text-ink">
+          Back
+        </button>
+      </form>
+    );
+  }
+
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form key="password" onSubmit={onSubmit} className="flex flex-col gap-4">
       <Field label="Username or email">
         <Input name="identifier" autoComplete="username" required />
       </Field>

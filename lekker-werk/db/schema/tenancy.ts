@@ -67,6 +67,13 @@ export const users = pgTable(
     failedLoginCount: integer("failed_login_count").notNull().default(0),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    // Two-step login (super admins). Secret is AES-GCM encrypted; set but not enabled = setup started.
+    totpSecret: text("totp_secret"),
+    totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),
+    // Last accepted 30-second step, so a code can't be replayed.
+    totpLastStep: integer("totp_last_step"),
+    // sha256 of each unused one-time backup code.
+    totpBackupCodes: jsonb("totp_backup_codes").$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -22,6 +22,13 @@
       "when": 1793216890564,
       "tag": "0002_session_idle_timeout",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793217025012,
+      "tag": "0003_two_step_login",
+      "breakpoints": true
     }
   ]
 }

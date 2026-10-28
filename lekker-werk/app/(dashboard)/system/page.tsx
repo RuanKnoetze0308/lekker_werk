@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search, ShoppingBag } from "lucide-react";
+import { Search, ShieldCheck, ShoppingBag } from "lucide-react";
 import { Badge, Card, EmptyState, PageHeader, Table, Td, Th, statusTone } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/Button";
 import { requirePlatformPage } from "@/server/auth/guards";
@@ -18,7 +18,12 @@ export default async function SystemPortalPage({ searchParams }: { searchParams:
       <PageHeader
         title="System portal"
         description="Every tenant on LekkerWerk. Open one to work inside it with all its data; everything you change is logged under your name."
-        actions={<Button href="/system/shop" variant="secondary-light" icon={<ShoppingBag className="size-4" />}>Hardware shop</Button>}
+        actions={
+          <>
+            <Button href="/system/security" variant="secondary-light" icon={<ShieldCheck className="size-4" />}>Security</Button>
+            <Button href="/system/shop" variant="secondary-light" icon={<ShoppingBag className="size-4" />}>Hardware shop</Button>
+          </>
+        }
       />
       <form className="mb-4 flex gap-2" action="/system">
         <label className="relative flex-1">

@@ -48,6 +48,8 @@ export type AuditAction =
   | "payroll.exported"
   | "auth.login"
   | "auth.password_reset"
+  | "auth.two_step_enabled"
+  | "auth.two_step_disabled"
   | "platform.promoted"
   | "platform.demoted"
   | "platform.tenant_entered"

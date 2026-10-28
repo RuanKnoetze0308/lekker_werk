@@ -34,6 +34,7 @@ import { sendEmail } from "./notification.service";
 import { createSession } from "../auth/session";
 import { clientIpFrom } from "../http/client-ip";
 import { isRateLimited, recordHit } from "./rate-limit.service";
+import { startChallenge } from "./two-step.service";
 import { headers } from "next/headers";
 
 /**
@@ -162,6 +163,12 @@ export async function login(input: LoginInput) {
     throw new AppError(401, "BAD_CREDENTIALS", "Incorrect email/username or password.");
   }
 
+  // Two-step login: the password was right, but no session until the authenticator code is too.
+  if (user.totpEnabledAt) {
+    await startChallenge(user.id);
+    return { userId: user.id, role: user.role, twoStep: true as const };
+  }
+
   await db
     .update(users)
     .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() })
@@ -169,7 +176,7 @@ export async function login(input: LoginInput) {
 
   await createSession(user.id);
   await audit({ userId: user.id, companyId: user.companyId }, "auth.login", "user", user.id);
-  return { userId: user.id, role: user.role };
+  return { userId: user.id, role: user.role, twoStep: false as const };
 }
 
 export async function requestPasswordReset(email: string) {

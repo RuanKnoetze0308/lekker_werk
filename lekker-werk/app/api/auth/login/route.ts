@@ -6,7 +6,8 @@ import { ok, parseBody, route } from "@/server/http/route";
 export const POST = route(
   async (req) => {
     const input = await parseBody(req, loginSchema);
-    const { role } = await login(input);
+    const { role, twoStep } = await login(input);
+    if (twoStep) return ok({ twoStep: true });
     return ok({ redirect: role === "EMPLOYEE" ? "/" : "/dashboard" });
   },
   { limit: 10, csrf: false },
