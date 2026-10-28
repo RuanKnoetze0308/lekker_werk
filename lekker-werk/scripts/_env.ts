@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -6,7 +6,9 @@ import { resolve } from "node:path";
  * Must run before anything imports db/client, which reads DATABASE_URL at import time,
  * so scripts import their app modules dynamically after calling this.
  */
-export function loadEnv(file = ".env.local") {
+export function loadEnv(file = ".env.local", opts: { optional?: boolean } = {}) {
+  // On Railway (`railway run` / a service shell) the variables are already in the environment.
+  if (opts.optional && !existsSync(resolve(process.cwd(), file))) return;
   // Strip a UTF-8 BOM: files written by Windows PowerShell start with one.
   const text = readFileSync(resolve(process.cwd(), file), "utf8").replace(/^﻿/, "");
   for (const line of text.split(/\r?\n/)) {

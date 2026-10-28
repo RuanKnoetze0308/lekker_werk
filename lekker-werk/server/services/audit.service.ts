@@ -49,6 +49,7 @@ export type AuditAction =
   | "auth.login"
   | "auth.password_reset"
   | "platform.promoted"
+  | "platform.demoted"
   | "platform.tenant_entered"
   | "platform.tenant_exited"
   | "shop.product_changed"

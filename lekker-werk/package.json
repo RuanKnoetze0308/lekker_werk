@@ -13,6 +13,7 @@
     "demo:seed": "node --conditions=react-server --import tsx scripts/demo/seed.ts",
     "demo:clean": "node --conditions=react-server --import tsx scripts/demo/clean.ts",
     "test": "vitest run",
+    "platform:admin": "node --conditions=react-server --import tsx scripts/platform-admin.ts",
     "attendance:recompute": "node --conditions=react-server --import tsx scripts/recompute-attendance.ts",
     "test:integration": "node -e \"process.env.INTEGRATION=1;require('child_process').execSync('vitest run tests/',{stdio:'inherit',env:process.env})\"",
     "migrate": "node scripts/db/migrate.mjs",

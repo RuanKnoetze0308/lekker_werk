@@ -171,8 +171,8 @@ Format: **Today** = current implementation · **Perm** = permission · **DB** = 
 ### 6.1 Auth
 | Endpoint | Status | Today | Body / Query | Returns | DB |
 |---|---|---|---|---|---|
-| `POST /auth/signup` | ROUTE | `authentication.service.signup` | company, contact, password, `preferredChannel`, `locationMode`, `locations[]`, `timezone` | `{ redirect }` + session | W tx: `companies`, `users` (role SUPER_ADMIN when the email is `@thewebdaddy.co.za`, see `lib/platform.ts`), `locations`, `company_settings`, `subscriptions` (7-day trial), `communication_channels` ×2, `employee_data_permissions`, `work_schedules`, `audit_logs`; W `sessions` |
-| `POST /auth/login` | ROUTE | `login` | `{ identifier, password }` | `{ redirect }` + session | R `users`; W `users` (failed count, lockout, `last_login_at`; promotes `@thewebdaddy.co.za` accounts to SUPER_ADMIN with a `platform.promoted` audit), `sessions`, `audit_logs` |
+| `POST /auth/signup` | ROUTE | `authentication.service.signup` | company, contact, password, `preferredChannel`, `locationMode`, `locations[]`, `timezone` | `{ redirect }` + session | W tx: `companies`, `users` (always COMPANY_ADMIN; platform access is only granted by `npm run platform:admin`), `locations`, `company_settings`, `subscriptions` (7-day trial), `communication_channels` ×2, `employee_data_permissions`, `work_schedules`, `audit_logs`; W `sessions` |
+| `POST /auth/login` | ROUTE | `login` | `{ identifier, password }` | `{ redirect }` + session | R `users`; W `users` (failed count, lockout, `last_login_at`), `sessions`, `audit_logs` |
 | `POST /auth/logout` | ROUTE | `destroySession` | | | W `sessions` (delete) |
 | `POST /auth/forgot` | ROUTE | `requestPasswordReset` | `{ email }` | always 200 | R `users`; W `password_resets`; sends an email (provider not wired yet) |
 | `POST /auth/reset` | ROUTE | `resetPassword` | `{ token, password }` | | W tx: `users`, `password_resets.used_at`, `sessions` (delete all); W `audit_logs` |
@@ -391,7 +391,7 @@ Salaried staff without overtime have overtime folded into NORMAL. Rates (1.5×, 
 | `POST /shop/payfast/itn` | ROUTE (server-to-server) | `handleShopItn` | PayFast signature + source IP + validation call (`payfast.verifyItn`) + amount check | form body | W `shop_orders` (PAID once, replays ignored; CANCELLED on cancel), `audit_logs`; emails `OPS_EMAIL` |
 
 ### 6.21 System portal (platform operators)
-Every route answers **404** to anyone who isn't SUPER_ADMIN (`requirePlatformApi` / `requirePlatformPage`) and is never blocked by a tenant's billing lock. Audit entries made while viewing a tenant keep the operator's `user_id` and add `metadata.viaSystemPortal`.
+SUPER_ADMIN is granted only from the command line (`npm run platform:admin -- grant <email>`, `@thewebdaddy.co.za` accounts only), never by signup or login. Every route answers **404** to anyone who isn't SUPER_ADMIN (`requirePlatformApi` / `requirePlatformPage`) and is never blocked by a tenant's billing lock. Audit entries made while viewing a tenant keep the operator's `user_id` and add `metadata.viaSystemPortal`.
 
 | Endpoint | Status | Today | Perm | Body | DB |
 |---|---|---|---|---|---|
@@ -410,6 +410,7 @@ Every route answers **404** to anyone who isn't SUPER_ADMIN (`requirePlatformApi
 | Maintenance | ROUTE `POST /jobs/maintenance` | `runMaintenance` | cron → **Azure: timer trigger (hourly)**; today `node scripts/cron.mjs maintenance` | deletes expired `sessions`, `rate_limits`, `link_codes`, `conversation_states`, `password_resets`; detects forgotten clock-outs → `notifications`; upserts national `public_holidays` (this and next year, from `lib/sa-holidays.ts`); `runLeaveAccruals` per company; recomputes yesterday for every active employee (no-shows become ABSENT, leave or holiday days) |
 | Telegram poller | script | `scripts/telegram-poll.ts` | local development only | see §5 |
 | Demo data | script | `scripts/demo/seed.ts`, `clean.ts` | manual, development only | creates/removes demo rows listed in `demo_data_registry` |
+| Platform admins | script | `scripts/platform-admin.ts` (`npm run platform:admin -- list \| grant <email> \| revoke <email>`) | manual, needs database access | W `users.role`, `audit_logs` (`platform.promoted` / `platform.demoted`); revoke deletes the user's `sessions` |
 | Attendance recompute | script | `scripts/recompute-attendance.ts` (`npm run attendance:recompute -- --days N --company ID`) | manual, after changing a rule | rebuilds `attendance_records` and `break_records` from `clock_events` |
 
 ---
@@ -429,6 +430,7 @@ Every route answers **404** to anyone who isn't SUPER_ADMIN (`requirePlatformApi
 
 | Date | Change |
 |---|---|
+| 2026-10-28 | Security hardening:<ul><li>SUPER_ADMIN no longer granted by email domain at signup/login; `platform:admin` script instead</li></ul> |
 | 2026-10-14 | <ul><li>Location headcounts (locations list, dashboard per-location and filters, location day, employee filter) include additional locations; the company total counts each person once</li><li>QR codes: STATIC / DYNAMIC mode, rotating HMAC tokens, public display screen and display link</li><li>Hardware shop: catalogue, orders, once-off PayFast checkout and ITN (`shop_*` tables)</li><li>System portal: SUPER_ADMIN auto-promotion for `@thewebdaddy.co.za`, tenant search and detail, act-as-tenant via `sessions.acting_company_id`, device enable/disable, shop catalogue and order fulfilment</li><li>Shared `payfast.verifyItn`. Migration `0001`</li></ul> |
 | 2026-10-13 (b) | Time & pay:<ul><li>employment terms</li><li>leave types (BCEA defaults), requests, decisions, cancellations, balance ledger, accruals and adjustments</li><li>"SICK" and leave balance in chat</li><li>South African public holidays with the Sunday→Monday rule</li><li>site closures</li><li>exceptions inbox and absence resolution</li><li>pay periods with live and frozen totals, lock/reopen, CSV export, and lock enforcement in the engine and corrections</li><li>attendance `trackFrom` and employment-date rules</li><li>`GET /health`</li></ul>Migrations replace `db:push` (`npm run migrate`, baseline with a uuidv7 fallback and the immutability trigger). Data export/import scripts for Railway. |
 | 2026-10-13 | Meal-break rule (auto-deduct unclocked lunch, configurable; `attendance_records.auto_break_minutes`). WhatsApp shared LekkerWerk number with tenant resolution, configurable Graph API version, failure-safe replies, dev logging sender. Pure parsers and unit tests for WhatsApp and Telegram, plus an integration test for the shared number (`npm run test:integration`). `attendance:recompute` script. |

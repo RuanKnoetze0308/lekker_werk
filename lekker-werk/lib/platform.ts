@@ -1,7 +1,8 @@
 /**
- * Platform operators (The Web Daddy). Any account on this domain is made SUPER_ADMIN at signup
- * and at every login. NOTE: signup does not verify email ownership, so anyone who can register
- * an address on this domain gets platform access; add email verification before relying on it.
+ * Platform operators (The Web Daddy). Only accounts on this domain can be made SUPER_ADMIN, and
+ * only by someone with database access running `npm run platform:admin -- grant <email>`.
+ * Signup and login never grant platform access: signup does not verify email ownership, and a
+ * company admin can create users with any address.
  */
 export const PLATFORM_EMAIL_DOMAIN = "thewebdaddy.co.za";
 
