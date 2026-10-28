@@ -16,6 +16,8 @@ export interface AuthContext {
   locationScope: string[] | null;
   /** SUPER_ADMIN viewing another tenant through the System portal (companyId is that tenant). */
   impersonating?: boolean;
+  /** When the super admin's access to that tenant lapses (impersonating only). */
+  actingUntil?: Date;
   /** Trial / subscription state, resolved with the session so every request can enforce it. */
   billing: BillingAccess;
 }

@@ -15,6 +15,13 @@
       "when": 1791993170034,
       "tag": "0001_puzzling_whizzer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793216890564,
+      "tag": "0002_session_idle_timeout",
+      "breakpoints": true
     }
   ]
 }

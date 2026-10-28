@@ -90,6 +90,10 @@ export const sessions = pgTable(
     // SUPER_ADMIN only: the tenant this session is currently viewing (System portal).
     // null = the user's own company.
     actingCompanyId: uuid("acting_company_id").references(() => companies.id),
+    // When the super admin stepped into actingCompanyId; access to the tenant lapses after an hour.
+    actingSince: timestamp("acting_since", { withTimezone: true }),
+    // Last request on this session (updated at most once a minute); drives the idle timeout.
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),
   },

@@ -5,6 +5,7 @@ import { clockDevices, companies, sessions, subscriptions, users } from "@/db/sc
 import type { AuthContext } from "../auth/context";
 import { Errors } from "../errors";
 import { audit } from "./audit.service";
+import { rotateSession } from "../auth/session";
 
 /**
  * System portal (platform operators only). These functions deliberately cross tenants, so every
@@ -90,14 +91,16 @@ export async function enterTenant(ctx: AuthContext, sessionId: string, companyId
   assertPlatform(ctx);
   const [company] = await db.select({ id: companies.id, name: companies.name }).from(companies).where(eq(companies.id, companyId));
   if (!company) throw Errors.notFound("Tenant");
-  await db.update(sessions).set({ actingCompanyId: company.id }).where(eq(sessions.id, sessionId));
+  await db.update(sessions).set({ actingCompanyId: company.id, actingSince: new Date() }).where(eq(sessions.id, sessionId));
+  await rotateSession(sessionId);
   await audit({ userId: ctx.userId, companyId: company.id }, "platform.tenant_entered", "company", company.id, { name: company.name });
   return company;
 }
 
 export async function exitTenant(ctx: AuthContext, sessionId: string) {
   assertPlatform(ctx);
-  await db.update(sessions).set({ actingCompanyId: null }).where(eq(sessions.id, sessionId));
+  await db.update(sessions).set({ actingCompanyId: null, actingSince: null }).where(eq(sessions.id, sessionId));
+  await rotateSession(sessionId);
   if (ctx.impersonating) {
     await audit({ userId: ctx.userId, companyId: ctx.companyId }, "platform.tenant_exited", "company", ctx.companyId);
   }

@@ -7,6 +7,7 @@ import { Topbar } from "@/components/dashboard/Topbar";
 import { requirePageContext } from "@/server/auth/guards";
 import { can, type Permission } from "@/server/auth/permissions";
 import { getCompany } from "@/server/services/company.service";
+import { formatTime } from "@/lib/time";
 import { ExitTenantButton } from "./system/_components/SystemActions";
 
 const NAV: (NavItem & { permission: Permission })[] = [
@@ -73,7 +74,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </div>
         {ctx.impersonating && (
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-ink px-5 py-2.5 text-sm font-medium text-white">
-            <span>Viewing <strong>{company.name}</strong> as a super admin. Changes are logged under your name.</span>
+            <span>
+              Viewing <strong>{company.name}</strong> as a super admin. Changes are logged under your name.
+              {ctx.actingUntil && <> Access ends at {formatTime(ctx.actingUntil, company.timezone)}.</>}
+            </span>
             <ExitTenantButton />
           </div>
         )}
