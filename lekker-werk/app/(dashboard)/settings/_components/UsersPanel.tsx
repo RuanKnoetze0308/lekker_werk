@@ -41,7 +41,7 @@ export function UserCreateButton({ locations }: { locations: { id: string; name:
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <Field label="Name"><Input name="name" required /></Field>
           <Field label="Email"><Input name="email" type="email" required /></Field>
-          <Field label="Temporary password" hint="10+ characters. Ask them to change it after first login."><Input name="password" type="password" minLength={10} required autoComplete="new-password" /></Field>
+          <Field label="Temporary password" hint="10+ characters with an uppercase letter, a lowercase letter and a number. Ask them to change it after first login."><Input name="password" type="password" minLength={10} required autoComplete="new-password" /></Field>
           <Field label="Role">
             <Select value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="MANAGER">Manager (assigned locations only)</option>

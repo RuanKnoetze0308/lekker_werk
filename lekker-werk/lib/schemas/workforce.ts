@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { locationInputSchema } from "./auth";
+import { locationInputSchema, passwordSchema } from "./auth";
 
 const optionalText = (max: number) =>
   z.string().trim().max(max).optional().nullable().transform((v) => (v ? v : null));
@@ -58,7 +58,7 @@ export const userCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email(),
   role: z.enum(["COMPANY_ADMIN", "MANAGER"]),
-  password: z.string().min(10).max(128),
+  password: passwordSchema,
   locationIds: z.array(z.uuid()).default([]),
 });
 

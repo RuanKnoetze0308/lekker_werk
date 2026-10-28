@@ -8,6 +8,7 @@ import { hashPassword } from "@/lib/crypto";
 import { assertCan, type AuthContext } from "../auth/context";
 import { Errors } from "../errors";
 import { audit } from "./audit.service";
+import { assertPasswordNotBreached } from "../auth/breached-password";
 
 export async function listUsers(ctx: AuthContext) {
   assertCan(ctx, "users:manage");
@@ -50,6 +51,7 @@ export async function createUser(ctx: AuthContext, input: z.infer<typeof userCre
     if (valid.length !== input.locationIds.length) throw Errors.invalid("Invalid location selected.");
   }
 
+  await assertPasswordNotBreached(input.password);
   const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
     const [user] = await tx

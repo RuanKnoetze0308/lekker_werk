@@ -36,6 +36,7 @@ import { clientIpFrom } from "../http/client-ip";
 import { isRateLimited, recordHit } from "./rate-limit.service";
 import { startChallenge } from "./two-step.service";
 import { headers } from "next/headers";
+import { assertPasswordNotBreached } from "../auth/breached-password";
 
 /**
  * Failed sign-ins are throttled per identifier (what was typed, so unknown and real accounts
@@ -49,6 +50,7 @@ const FAIL_PER_ACCOUNT = { limit: 30, windowSeconds: 3600 };
 export async function signup(input: SignupInput) {
   const exists = await db.select({ id: users.id }).from(users).where(eq(users.email, input.email)).limit(1);
   if (exists.length) throw Errors.conflict("An account with this email already exists.");
+  await assertPasswordNotBreached(input.password);
 
   const passwordHash = await hashPassword(input.password);
 
@@ -209,6 +211,7 @@ export async function resetPassword(token: string, password: string) {
     )
     .limit(1);
   if (!row) throw Errors.invalid("This reset link is invalid or has expired.");
+  await assertPasswordNotBreached(password);
 
   const passwordHash = await hashPassword(password);
   await db.transaction(async (tx) => {
