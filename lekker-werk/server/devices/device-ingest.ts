@@ -8,6 +8,8 @@ import { formatTime } from "@/lib/time";
 import { AppError, Errors } from "../errors";
 import { processClock } from "../clocking/clocking.service";
 import { REJECTION_MESSAGES } from "../clocking/messages";
+import { notify } from "../services/notification.service";
+import { isRateLimited, rateLimit, recordHit } from "../services/rate-limit.service";
 
 /**
  * Device adapter: the bridge between physical terminals (RFID/NFC readers, biometric scanners,
@@ -26,6 +28,33 @@ export async function authenticateDevice(authorization: string | null, ip: strin
   if (!device.enabled) throw new AppError(403, "DEVICE_DISABLED", REJECTION_MESSAGES.DEVICE_DISABLED);
   await db.update(clockDevices).set({ lastSeenAt: new Date(), lastIp: ip }).where(eq(clockDevices.id, device.id));
   return device;
+}
+
+/**
+ * Unknown cards / PINs per terminal: 10 per 10 minutes, then the terminal refuses punches until the
+ * window ends. A 4-digit PIN would otherwise be guessable through a stolen device key. Admins
+ * get one notification per window.
+ */
+const BAD_CREDENTIAL_LIMIT = { limit: 10, windowSeconds: 600 };
+
+function badCredentialGuard(device: Device) {
+  const key = `device-bad-credential:${device.id}`;
+  return {
+    blocked: () => isRateLimited(key, BAD_CREDENTIAL_LIMIT.limit, BAD_CREDENTIAL_LIMIT.windowSeconds),
+    async record() {
+      await recordHit(key, BAD_CREDENTIAL_LIMIT.windowSeconds);
+      if (!(await isRateLimited(key, BAD_CREDENTIAL_LIMIT.limit, BAD_CREDENTIAL_LIMIT.windowSeconds))) return;
+      // rateLimit(…, 1, …) is true only for the first call in the window: one alert per window.
+      if (!(await rateLimit(`device-bad-credential-alert:${device.id}`, 1, BAD_CREDENTIAL_LIMIT.windowSeconds))) return;
+      await notify({
+        companyId: device.companyId,
+        type: "UNUSUAL_CLOCKING",
+        title: `Many unknown cards or PINs on ${device.name}`,
+        body: `${BAD_CREDENTIAL_LIMIT.limit} unrecognised cards or PINs in ${BAD_CREDENTIAL_LIMIT.windowSeconds / 60} minutes. The terminal is paused for a few minutes. If this wasn't staff, rotate its key under Devices.`,
+        payload: { deviceId: device.id },
+      });
+    },
+  };
 }
 
 export interface PunchResult {
@@ -49,7 +78,12 @@ export async function submitPunches(device: Device, punches: PunchInput[], opts:
     .sort((a, b) => a.t - b.t);
   // Results go back in the order the device sent them, so it can match them up by position too.
   const results: PunchResult[] = new Array(punches.length);
+  const guard = badCredentialGuard(device);
   for (const { p, i } of order) {
+    if (await guard.blocked()) {
+      results[i] = { punchId: p.punchId ?? null, status: "REJECTED", reason: "RATE_LIMITED", display: REJECTION_MESSAGES.RATE_LIMITED };
+      continue;
+    }
     const r = await processClock({
       companyId: device.companyId,
       action: p.action ?? device.fixedAction ?? "AUTO",
@@ -70,6 +104,7 @@ export async function submitPunches(device: Device, punches: PunchInput[], opts:
         occurredAt: r.event.occurredAt.toISOString(),
       };
     } else {
+      if (r.reason === "CREDENTIAL_UNKNOWN") await guard.record();
       results[i] = {
         punchId: p.punchId ?? null,
         status: r.reason === "DUPLICATE" ? "DUPLICATE" : "REJECTED",
