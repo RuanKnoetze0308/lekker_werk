@@ -365,3 +365,54 @@ export async function exportPayPeriod(ctx: AuthContext, id: string, format: "lin
   });
   return { csv: `${csv}\n`, filename: `payroll_${period.startDate}_${period.endDate}_${format}.csv` };
 }
+
+/** The frozen totals of a locked period as plain lines: what a payroll connector receives. */
+export async function buildPayPeriodExport(ctx: AuthContext, id: string) {
+  const period = await loadPeriod(ctx, id);
+  if (period.status === "OPEN") throw Errors.conflict("Lock the period before sending it to payroll.");
+  const [totals, company] = await Promise.all([
+    snapshotTotals(ctx.companyId, period.id, period.startDate, period.endDate),
+    getCompany(ctx),
+  ]);
+  const codes = sortPayCodes(totals.flatMap((t) => Object.keys(t.lines)));
+  const lines = totals.flatMap((t) =>
+    codes
+      .filter((code) => t.lines[code])
+      .map((code) => ({
+        employeeNumber: t.employeeNumber,
+        employeeName: t.name,
+        payCode: code,
+        hours: Math.round((t.lines[code].minutes / 60) * 100) / 100,
+        days: t.lines[code].days,
+      })),
+  );
+  return {
+    periodId: period.id,
+    periodStart: period.startDate,
+    periodEnd: period.endDate,
+    company: { id: company.id, name: company.name },
+    lines,
+  };
+}
+
+/** Records that a locked period went to an external system (same history as CSV exports). */
+export async function recordIntegrationExport(
+  ctx: AuthContext,
+  periodId: string,
+  target: { integrationId: string; provider: string; rowCount: number; accepted: number; reference?: string },
+) {
+  const period = await loadPeriod(ctx, periodId);
+  await db.transaction(async (tx) => {
+    await tx.insert(payExports).values({
+      companyId: ctx.companyId,
+      payPeriodId: period.id,
+      target: `INTEGRATION_${target.provider}`,
+      integrationId: target.integrationId,
+      rowCount: target.rowCount,
+      summary: { accepted: target.accepted, reference: target.reference ?? null },
+      createdBy: ctx.userId,
+    });
+    await tx.update(payPeriods).set({ status: "EXPORTED" }).where(eq(payPeriods.id, period.id));
+    await audit(ctx, "payroll.exported", "pay_period", period.id, { format: "integration", provider: target.provider, integrationId: target.integrationId, rowCount: target.rowCount, reference: target.reference ?? null }, tx);
+  });
+}

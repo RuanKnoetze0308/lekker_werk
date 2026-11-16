@@ -6,6 +6,7 @@ import { requirePageContext } from "@/server/auth/guards";
 import { getCompany } from "@/server/services/company.service";
 import { importedHoursSummary, listIntegrations, listSyncs } from "@/server/services/integration.service";
 import { listIntegrationRequests } from "@/server/services/integration-request.service";
+import { providerCapabilities } from "@/server/integrations/registry";
 import { IntegrationActions, IntegrationFormButton } from "./_components/IntegrationForm";
 import { RequestIntegrationButton } from "./_components/RequestIntegration";
 
@@ -21,15 +22,18 @@ export default async function IntegrationsPage() {
     listIntegrationRequests(ctx),
   ]);
   const connected = new Set(items.filter((i) => i.enabled).map((i) => i.provider));
+  // One source of truth for "can this be connected": the server registry (native connector or bridge).
+  const available = PROVIDER_CATALOG.filter((p) => providerCapabilities(p.provider).available).map((p) => p.provider);
+  const isAvailable = (p: ProviderMeta) => available.includes(p.provider);
   const requested = new Set(requests.map((r) => r.systemName.toLowerCase()));
 
   const catalogCard = (p: ProviderMeta) => (
-    <div key={p.provider} className="flex flex-col gap-3 rounded-[20px] border border-border bg-white p-5">
+    <div key={p.provider} className="flex flex-col gap-3 rounded-[20px] border border-border bg-white p-5 shadow-[0_1px_2px_rgba(7,19,20,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <p className="font-semibold text-ink">{p.label}</p>
         <span className="shrink-0 whitespace-nowrap">
-          <Badge tone={connected.has(p.provider) ? "green" : p.implemented ? "blue" : "gray"}>
-            {connected.has(p.provider) ? "Connected" : p.implemented ? "Available" : "Coming soon"}
+          <Badge tone={connected.has(p.provider) ? "green" : isAvailable(p) ? "blue" : "gray"}>
+            {connected.has(p.provider) ? "Connected" : isAvailable(p) ? "Available" : "Coming soon"}
           </Badge>
         </span>
       </div>
@@ -39,8 +43,8 @@ export default async function IntegrationsPage() {
         {p.direction === "EXPORT_HOURS" ? "sends hours to it" : "imports hours from it"}
       </p>
       <div>
-        {p.implemented ? (
-          <IntegrationFormButton provider={p.provider} label={connected.has(p.provider) ? "Add another" : "Connect"} />
+        {isAvailable(p) ? (
+          <IntegrationFormButton available={available} provider={p.provider} label={connected.has(p.provider) ? "Add another" : "Connect"} />
         ) : requested.has(p.label.toLowerCase()) ? (
           <span className="text-sm font-medium text-dark-green">Requested ✓</span>
         ) : (
@@ -63,7 +67,7 @@ export default async function IntegrationsPage() {
       <PageHeader
         title="Integrations"
         description="Send approved hours to your payroll or accounting system, or import hours from your ERP. Syncs run in the background, so the dashboard never waits on an external API."
-        actions={<IntegrationFormButton />}
+        actions={<IntegrationFormButton available={available} />}
       />
 
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Most used in South Africa</h2>
@@ -103,7 +107,7 @@ export default async function IntegrationsPage() {
         <Card>
           <EmptyState
             title="No integrations connected yet"
-            hint="Odoo and Custom API work today. The South African payroll connectors are next; tell us which one you need first."
+            hint="Pick a system marked Available above to connect it. For the others, tell us which one you need first."
           />
         </Card>
       ) : (
@@ -115,27 +119,39 @@ export default async function IntegrationsPage() {
               action={
                 <div className="flex items-center gap-2">
                   <Badge tone={i.enabled ? "green" : "gray"}>{i.enabled ? "Enabled" : "Disabled"}</Badge>
-                  <IntegrationFormButton integration={i} />
+                  <IntegrationFormButton available={available} integration={i} />
                 </div>
               }
             >
               <dl className="grid gap-4 text-sm sm:grid-cols-4">
                 <div>
-                  <dt className="text-xs text-muted">Last successful sync</dt>
+                  <dt className="text-xs text-muted">{i.canImport ? "Last successful sync" : "Last successful send"}</dt>
                   <dd>{fmt(i.lastSuccessfulSyncAt)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted">Last failed sync</dt>
+                  <dt className="text-xs text-muted">{i.canImport ? "Last failed sync" : "Last failed send"}</dt>
                   <dd>{fmt(i.lastFailedSyncAt)}</dd>
                 </div>
-                <div>
-                  <dt className="text-xs text-muted">Next scheduled sync</dt>
-                  <dd>{i.enabled ? fmt(i.nextSyncAt) : "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted">Frequency</dt>
-                  <dd>every {i.syncFrequencyMinutes} min</dd>
-                </div>
+                {i.canImport ? (
+                  <>
+                    <div>
+                      <dt className="text-xs text-muted">Next scheduled sync</dt>
+                      <dd>{i.enabled ? fmt(i.nextSyncAt) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Frequency</dt>
+                      <dd>every {i.syncFrequencyMinutes} min</dd>
+                    </div>
+                  </>
+                ) : (
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs text-muted">How hours get there</dt>
+                    <dd>
+                      Lock a pay period, then send it from{" "}
+                      <Link href="/payroll" className="font-medium text-dark-green hover:underline">Payroll</Link>.
+                    </dd>
+                  </div>
+                )}
               </dl>
               {i.lastError && (
                 <p className="mt-3 rounded-[10px] bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -143,11 +159,11 @@ export default async function IntegrationsPage() {
                 </p>
               )}
               <div className="mt-4">
-                <IntegrationActions id={i.id} />
+                <IntegrationActions id={i.id} canImport={i.canImport} />
               </div>
 
-              {syncs[idx].length > 0 && (
-                <div className="mt-5 -mx-5 border-t border-border">
+              {i.canImport && syncs[idx].length > 0 && (
+                <div className="-mx-4 -mb-4 mt-5 border-t border-border sm:-mx-5 sm:-mb-5">
                   <Table>
                     <thead>
                       <tr>

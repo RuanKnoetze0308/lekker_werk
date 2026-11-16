@@ -2,10 +2,12 @@ import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader, StatCard, Table, Td, Th } from "@/components/dashboard/ui";
 import { formatDateTime } from "@/lib/time";
 import { readParams, type SearchParams } from "@/lib/page-utils";
+import { orNotFound, pageId } from "@/server/http/page";
 import { requirePageContext } from "@/server/auth/guards";
 import { can } from "@/server/auth/permissions";
 import { getCompany } from "@/server/services/company.service";
 import { getPayPeriodReport } from "@/server/time/payroll.service";
+import { listExportTargets } from "@/server/services/integration.service";
 import { PeriodActions } from "../_components/PeriodActions";
 
 export const metadata = { title: "Pay period · LekkerWerk" };
@@ -25,9 +27,9 @@ const h = (m: number) => (m / 60).toFixed(2);
 
 export default async function PayPeriodPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SearchParams }) {
   const ctx = await requirePageContext("payroll:manage");
-  const { id } = await params;
+  const id = pageId((await params).id);
   const refresh = (await readParams(searchParams)).get("refresh") === "1";
-  const [report, company] = await Promise.all([getPayPeriodReport(ctx, id, { refresh }), getCompany(ctx)]);
+  const [report, company, targets] = await Promise.all([orNotFound(getPayPeriodReport(ctx, id, { refresh })), getCompany(ctx), listExportTargets(ctx)]);
   const { period, totals, codes, exceptions } = report;
   const open = period.status === "OPEN";
   const openItems = exceptions.absences + exceptions.incomplete + exceptions.pendingLeave;
@@ -42,7 +44,7 @@ export default async function PayPeriodPage({ params, searchParams }: { params: 
             ? "Live totals from attendance. Lock the period when everything is right; after that these days can't change."
             : `Locked ${period.lockedAt ? formatDateTime(period.lockedAt, company.timezone) : ""}. Totals are frozen.${period.lockNote ? ` Note: ${period.lockNote}` : ""}`
         }
-        actions={<PeriodActions id={period.id} status={period.status} openItems={openItems} canReopen={can(ctx.role, "settings:manage")} />}
+        actions={<PeriodActions id={period.id} status={period.status} openItems={openItems} canReopen={can(ctx.role, "settings:manage")} exportTargets={targets.map((t) => ({ id: t.id, name: t.name }))} />}
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

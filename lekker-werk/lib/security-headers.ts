@@ -39,4 +39,6 @@ export const STATIC_SECURITY_HEADERS = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" },
   { key: "X-DNS-Prefetch-Control", value: "off" },
+  // A page that opens us (or that we open) in another window gets no handle on this one.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 ];

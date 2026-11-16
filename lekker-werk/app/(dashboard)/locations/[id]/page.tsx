@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader, Table, Td, Th, statusTone } from "@/components/dashboard/ui";
 import { readParams, type SearchParams } from "@/lib/page-utils";
+import { orNotFound, pageId } from "@/server/http/page";
 import { formatMinutes, formatTime, localDate } from "@/lib/time";
 import { can } from "@/server/auth/permissions";
 import { requirePageContext } from "@/server/auth/guards";
@@ -20,10 +21,10 @@ export default async function LocationDetailPage({
   searchParams: SearchParams;
 }) {
   const ctx = await requirePageContext("locations:read");
-  const { id } = await params;
+  const id = pageId((await params).id);
   const p = await readParams(searchParams);
-  const loc = await getLocation(ctx, id);
-  const date = p.get("date") ?? localDate(new Date(), loc.timezone);
+  const loc = await orNotFound(getLocation(ctx, id));
+  const date = p.date("date") ?? localDate(new Date(), loc.timezone);
 
   const canDash = can(ctx.role, "dashboard:view");
   const [roster, assigned, managers, qrs, closures] = await Promise.all([

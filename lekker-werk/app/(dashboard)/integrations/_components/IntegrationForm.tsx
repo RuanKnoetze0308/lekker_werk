@@ -24,7 +24,10 @@ export function IntegrationFormButton({
   integration,
   provider: initialProvider,
   label,
+  available,
 }: {
+  /** Systems that have a working connector right now (from the server registry). */
+  available: ProviderId[];
   integration?: Existing;
   /** Preselect a system (catalog cards). */
   provider?: ProviderId;
@@ -32,7 +35,7 @@ export function IntegrationFormButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [provider, setProvider] = useState<ProviderId>(integration?.provider ?? initialProvider ?? "CUSTOM_API");
+  const [provider, setProvider] = useState<ProviderId>(integration?.provider ?? initialProvider ?? available[0] ?? "CUSTOM_API");
   const meta = catalogByProvider[provider];
   const [name, setName] = useState(integration?.name ?? "");
   const [category, setCategory] = useState(integration?.category ?? meta.categories[0]);
@@ -81,11 +84,16 @@ export function IntegrationFormButton({
       )}
       <Modal open={open} onClose={() => setOpen(false)} title={integration ? "Configure integration" : "Connect a system"} wide>
         <div className="flex flex-col gap-4">
-          {!meta.implemented && (
+          {!available.includes(provider) && (
             <p className="rounded-[10px] bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              The {meta.label} connector is registered but not available yet. You can save the settings now; syncing will fail until it ships.
+              The {meta.label} connector is not available yet. You can save the settings now; nothing is sent until it ships.
             </p>
           )}
+          <p className="text-sm text-muted">
+            {meta.direction === "EXPORT_HOURS"
+              ? `${meta.label} receives hours: lock a pay period, then send it from Payroll.`
+              : `Hours are imported from ${meta.label} on the schedule below and compared with clocked hours in Reports.`}
+          </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="System">
               <Select
@@ -99,7 +107,7 @@ export function IntegrationFormButton({
                   setCreds({});
                 }}
               >
-                {PROVIDER_CATALOG.map((p) => <option key={p.provider} value={p.provider}>{p.label}{p.implemented ? "" : " (coming soon)"}</option>)}
+                {PROVIDER_CATALOG.map((p) => <option key={p.provider} value={p.provider}>{p.label}{available.includes(p.provider) ? "" : " (coming soon)"}</option>)}
               </Select>
             </Field>
             <Field label="Type">
@@ -108,7 +116,9 @@ export function IntegrationFormButton({
               </Select>
             </Field>
             <Field label="Display name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder={meta.label} /></Field>
-            <Field label="Sync every (minutes)"><Input inputMode="numeric" value={freq} onChange={(e) => setFreq(e.target.value)} /></Field>
+            {meta.direction === "IMPORT_HOURS" && (
+              <Field label="Sync every (minutes)"><Input inputMode="numeric" value={freq} onChange={(e) => setFreq(e.target.value)} /></Field>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -142,7 +152,7 @@ export function IntegrationFormButton({
   );
 }
 
-export function IntegrationActions({ id }: { id: string }) {
+export function IntegrationActions({ id, canImport }: { id: string; canImport: boolean }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ error?: string; success?: string }>({});
@@ -167,9 +177,11 @@ export function IntegrationActions({ id }: { id: string }) {
         <Button size="sm" variant="secondary-light" disabled={!!pending} onClick={() => run("test", () => api(`/api/integrations/${id}/test`, { body: {} }), "Connection successful.")}>
           {pending === "test" ? "Testing…" : "Test connection"}
         </Button>
-        <Button size="sm" variant="secondary-light" disabled={!!pending} onClick={() => run("sync", () => api(`/api/integrations/${id}/sync`, { body: {} }), "Sync queued. It will run on the next worker tick.")}>
-          Sync now
-        </Button>
+        {canImport && (
+          <Button size="sm" variant="secondary-light" disabled={!!pending} onClick={() => run("sync", () => api(`/api/integrations/${id}/sync`, { body: {} }), "Sync queued. It will run on the next worker tick.")}>
+            Sync now
+          </Button>
+        )}
         <Button
           size="sm"
           variant="danger"

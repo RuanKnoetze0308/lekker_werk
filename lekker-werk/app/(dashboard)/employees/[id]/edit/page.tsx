@@ -3,13 +3,14 @@ import { requirePageContext } from "@/server/auth/guards";
 import { getEmployee } from "@/server/services/employee.service";
 import { listLocations } from "@/server/services/location.service";
 import { listManagerUsers } from "@/server/services/user.service";
+import { orNotFound, pageId } from "@/server/http/page";
 import { EmployeeForm } from "../../_components/EmployeeForm";
 
 export default async function EditEmployeePage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePageContext("employees:write");
-  const { id } = await params;
+  const id = pageId((await params).id);
   const [{ employee: e, extraLocations }, locations, managers] = await Promise.all([
-    getEmployee(ctx, id),
+    orNotFound(getEmployee(ctx, id)),
     listLocations(ctx),
     listManagerUsers(ctx),
   ]);

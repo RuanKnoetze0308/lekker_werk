@@ -40,13 +40,13 @@ export default async function AttendancePage({ searchParams }: { searchParams: S
   const ctx = await requirePageContext("attendance:read");
   const company = await getCompany(ctx);
   const p = await readParams(searchParams);
-  const to = p.get("to") ?? localDate(new Date(), company.timezone);
+  const to = p.date("to") ?? localDate(new Date(), company.timezone);
   const query = attendanceQuery.parse({
-    from: p.get("from") ?? addDays(to, -6),
+    from: p.date("from") ?? addDays(to, -6),
     to,
-    locationId: p.get("locationId"),
+    locationId: p.uuid("locationId"),
     department: p.get("department"),
-    page: p.get("page"),
+    page: p.page(),
   });
 
   const [result, locations, departments, attempts] = await Promise.all([

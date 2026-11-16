@@ -41,7 +41,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
         title="Clock devices"
         description="RFID and NFC readers, biometric scanners and kiosks: another way to clock in besides WhatsApp and Telegram. Manage your devices or buy hardware here."
       />
-      <nav className="mb-5 flex gap-1 overflow-x-auto rounded-[14px] border border-border bg-white p-1" aria-label="Devices sections">
+      <nav className="no-scrollbar mb-5 flex gap-1 overflow-x-auto overflow-y-hidden rounded-[14px] border border-border bg-white p-1" aria-label="Devices sections">
         {TABS.map((t) => (
           <Link
             key={t.id}
@@ -123,7 +123,7 @@ async function MyDevices({ ctx }: { ctx: AuthContext }) {
         ) : (
           <>
           {/* Phones: stacked so the actions are reachable without sideways scrolling. */}
-          <ul className="divide-y divide-border/70 md:hidden">
+          <ul className="divide-y divide-border/70 xl:hidden">
             {devices.map((d) => (
               <li key={d.id} className="flex flex-col gap-1.5 px-4 py-4 text-sm">
                 <div className="flex items-start justify-between gap-2">
@@ -131,12 +131,12 @@ async function MyDevices({ ctx }: { ctx: AuthContext }) {
                   {status(d)}
                 </div>
                 <p className="text-xs text-muted">{DEVICE_KIND_LABEL[d.kind]} · {d.locationName} · {d.fixedAction ? MODE_LABEL[d.fixedAction] : "Tap in / tap out"}</p>
-                <p className="text-xs text-muted">{d.punches24h} punches (24h){d.lastSeenAt ? ` · last seen ${formatDateTime(d.lastSeenAt, d.timezone)}` : ""}</p>
+                <p className="text-xs text-muted">{d.punches24h} {d.punches24h === 1 ? "punch" : "punches"} (24h){d.lastSeenAt ? ` · last seen ${formatDateTime(d.lastSeenAt, d.timezone)}` : ""}</p>
                 <span className="self-start"><DeviceActions id={d.id} name={d.name} enabled={d.enabled} canSimulate={env.simulatorsEnabled} /></span>
               </li>
             ))}
           </ul>
-          <div className="hidden md:block">
+          <div className="hidden xl:block">
           <Table>
             <thead>
               <tr>

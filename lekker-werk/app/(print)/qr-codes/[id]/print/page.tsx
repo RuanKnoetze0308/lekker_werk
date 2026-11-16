@@ -1,3 +1,4 @@
+import { orNotFound, pageId } from "@/server/http/page";
 import { requirePageContext } from "@/server/auth/guards";
 import { getQrAsset } from "@/server/services/qr.service";
 import { PrintButton } from "./PrintButton";
@@ -6,8 +7,8 @@ export const metadata = { title: "Print QR code · LekkerWerk" };
 
 export default async function PrintQrPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePageContext("qr:manage");
-  const { id } = await params;
-  const asset = await getQrAsset(ctx, id);
+  const id = pageId((await params).id);
+  const asset = await orNotFound(getQrAsset(ctx, id));
 
   if (asset.mode === "DYNAMIC") {
     return (

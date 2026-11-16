@@ -56,6 +56,20 @@ body {
   }
 }
 
+/* Scrollable tab strips: keep the swipe, hide the bar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* One visible keyboard focus style everywhere (mouse clicks don't show it). */
+:where(a, button, [role="switch"], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-dark-green);
+  outline-offset: 2px;
+}
+
 .animate-float {
   animation: float-y 5s ease-in-out infinite;
 }

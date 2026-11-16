@@ -106,7 +106,9 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
   }
 
   const [day] = await rows(sql`
-    select count(*)::int as present,
+    select (count(*) filter (where a.first_clock_in is not null))::int as present,
+      (count(*) filter (where a.first_clock_in is null and a.status in ('ON_LEAVE','PUBLIC_HOLIDAY','SITE_CLOSED')))::int as excused,
+      (count(*) filter (where a.first_clock_in is null and a.status = 'ON_LEAVE'))::int as "onLeave",
       coalesce(sum(a.worked_minutes),0)::int as worked,
       coalesce(sum(a.scheduled_minutes),0)::int as scheduled,
       coalesce(sum(a.overtime_minutes),0)::int as overtime,
@@ -127,7 +129,18 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
   const startMin = dayDef ? parseHHmm(dayDef.start) : 8 * 60;
   const dayMinutes = dayDef ? parseHHmm(dayDef.end) - parseHHmm(dayDef.start) - (dayDef.breakMinutes ?? 0) : 0;
   const pastStart = !isToday || localMinutes(now, tz) > startMin + (defSched?.graceMinutes ?? 5);
-  const absent = workingDay && pastStart ? Math.max(0, totalEmployees - Number(day.present)) : 0;
+  // People on approved leave, a public holiday or a closed site are accounted for, not absent.
+  const present = Number(day.present);
+  const excused = Number(day.excused);
+  const unaccounted = Math.max(0, totalEmployees - present - excused);
+  const absent = workingDay && pastStart ? unaccounted : 0;
+  // Scope the rejected-attempt count like everything else (a manager only sees their sites).
+  const attemptScope =
+    ctx.locationScope === null
+      ? sql``
+      : ctx.locationScope.length
+        ? sql`and ca.location_id in (${sql.join(ctx.locationScope.map((id) => sql`${id}::uuid`), sql`, `)})`
+        : sql`and false`;
 
   const [exceptions] = await rows(sql`
     select
@@ -136,21 +149,23 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
           and a.work_date >= ${addDays(today, -7)} and ${cond}) as incomplete,
       (select count(*)::int from clock_attempts ca
         where ca.company_id = ${ctx.companyId} and ca.status = 'REJECTED'
-          and ca.created_at >= ${new Date(now.getTime() - 24 * 3600_000).toISOString()}) as rejected`);
+          and ca.created_at >= ${new Date(now.getTime() - 24 * 3600_000).toISOString()}
+          ${attemptScope}
+          ${f.locationId ? sql`and ca.location_id = ${f.locationId}` : sql``}) as rejected`);
 
   const [period] = await rows(sql`
     select coalesce(sum(a.worked_minutes),0)::int as worked,
       coalesce(sum(a.scheduled_minutes),0)::int as scheduled,
       coalesce(sum(a.overtime_minutes),0)::int as overtime,
-      count(*)::int as days
+      (count(*) filter (where a.first_clock_in is not null))::int as days,
+      (count(*) filter (where a.status = 'ABSENT' and a.work_date < ${today}))::int as "absentDays"
     from attendance_records a join employees e on e.id = a.employee_id
     where a.company_id = ${ctx.companyId} and a.work_date >= ${monthStart} and a.work_date <= ${today} and ${cond}`);
 
-  let workingDays = 0;
-  for (let d = monthStart; d <= today; d = addDays(d, 1)) {
-    if (settings.workingWeek.includes(isoWeekday(d))) workingDays++;
-  }
-  const possible = totalEmployees * workingDays;
+  // Attendance rate = days people came in ÷ days they were expected (came in + absent).
+  // Leave, public holidays and site closures are not expected days, so they don't count against it.
+  const attendedDays = Number(period.days);
+  const possible = attendedDays + Number(period.absentDays) + absent;
 
   return {
     date: today,
@@ -159,7 +174,12 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
     today: {
       clockedIn: inNow,
       onBreak,
-      clockedOut: Math.max(0, totalEmployees - inNow - onBreak),
+      // Finished for the day: clocked in on this date and no longer on the clock.
+      clockedOut: Math.max(0, present - inNow - onBreak),
+      onLeave: Number(day.onLeave),
+      excused,
+      // Expected later today: no clocking yet, but their start time hasn't passed.
+      notInYet: workingDay && !pastStart ? unaccounted : 0,
       workedMinutes: Number(day.worked),
       scheduledMinutes: Number(day.scheduled) + absent * Math.max(0, dayMinutes),
       lateArrivals: Number(day.late),
@@ -179,7 +199,7 @@ export async function getDashboardOverview(ctx: AuthContext, f: DashboardFilters
       monthWorkedMinutes: Number(period.worked),
       monthScheduledMinutes: Number(period.scheduled),
       monthOvertimeMinutes: Number(period.overtime),
-      attendanceRate: possible ? Math.min(100, Math.round((Number(period.days) / possible) * 100)) : null,
+      attendanceRate: possible ? Math.round((attendedDays / possible) * 100) : null,
     },
   };
 }
@@ -272,4 +292,47 @@ export async function getHoursByEmployee(ctx: AuthContext, from: string, to: str
     group by e.id, e.first_name, e.last_name, l.name
     order by worked desc
     limit ${limit}`);
+}
+
+export interface DailyTrendPoint {
+  date: string;
+  worked: number;
+  scheduled: number;
+  overtime: number;
+  attended: number;
+  late: number;
+  absent: number;
+}
+
+/** One row per day in the range (days without records are zeros): the dashboard trend chart. */
+export async function getDailyTrend(ctx: AuthContext, from: string, to: string, f: DashboardFilters = {}): Promise<DailyTrendPoint[]> {
+  assertCan(ctx, "dashboard:view");
+  if (f.locationId) assertLocationAccess(ctx, f.locationId);
+  const cond = empConditions(ctx, f);
+  const data = await rows(sql`
+    select a.work_date::text as date,
+      coalesce(sum(a.worked_minutes),0)::int as worked,
+      coalesce(sum(a.scheduled_minutes),0)::int as scheduled,
+      coalesce(sum(a.overtime_minutes),0)::int as overtime,
+      (count(*) filter (where a.first_clock_in is not null))::int as attended,
+      (count(*) filter (where a.late_minutes > 0))::int as late,
+      (count(*) filter (where a.status = 'ABSENT'))::int as absent
+    from attendance_records a join employees e on e.id = a.employee_id
+    where a.company_id = ${ctx.companyId} and a.work_date >= ${from} and a.work_date <= ${to} and ${cond}
+    group by a.work_date`);
+  const byDate = new Map(data.map((r) => [String(r.date), r]));
+  const out: DailyTrendPoint[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const r = byDate.get(d);
+    out.push({
+      date: d,
+      worked: Number(r?.worked ?? 0),
+      scheduled: Number(r?.scheduled ?? 0),
+      overtime: Number(r?.overtime ?? 0),
+      attended: Number(r?.attended ?? 0),
+      late: Number(r?.late ?? 0),
+      absent: Number(r?.absent ?? 0),
+    });
+  }
+  return out;
 }

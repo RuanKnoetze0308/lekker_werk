@@ -21,7 +21,7 @@ Telegram on localhost: connect the bot under Settings → Communication, then ru
 
 Background jobs: `node scripts/cron.mjs maintenance` (hourly) and `node scripts/cron.mjs sync` (every 15 min), with `APP_URL` and `CRON_SECRET` set.
 
-Release: see [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md). Every database operation is listed as a future API endpoint in [docs/api/API_CATALOG.md](docs/api/API_CATALOG.md).
+Release: see [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md). Every database operation is listed as a future API endpoint in [docs/api/API_CATALOG.md](docs/api/API_CATALOG.md). To add a payroll / ERP connector (here in TypeScript, or in your own .NET backend) see [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## Where things live
 
@@ -31,7 +31,7 @@ Release: see [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md). Every database op
 | `server/services/*` | Business logic: Authentication, Company, Location, Employee, Attendance, QR, Integration, Notification, Reporting… |
 | `server/clocking/` | **Clocking engine**: the only code that writes clock events (validation + state machine) |
 | `server/channels/` | Messaging layer. `messaging.service.ts` is channel-agnostic; `telegram/` and `whatsapp/` are thin adapters |
-| `server/integrations/` | Provider interface + registry (Custom API, Odoo; others stubbed). Add an ERP = one file |
+| `server/integrations/` | Provider contract + registry (Custom API, Odoo native; the rest via your own code or the bridge to an external backend). Add a connector = one file, see docs/INTEGRATIONS.md |
 | `server/auth/`, `server/http/` | Sessions, roles/permissions, guards, API wrapper (CSRF, rate limit, errors) |
 | `app/api/*` | HTTP API (thin: validate → call service) |
 | `app/(marketing)/` | Public homepage + login/signup modals |

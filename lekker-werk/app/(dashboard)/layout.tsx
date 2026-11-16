@@ -10,6 +10,7 @@ import { getCompany } from "@/server/services/company.service";
 import { formatTime } from "@/lib/time";
 import { ExitTenantButton } from "./system/_components/SystemActions";
 
+// Order = the order in the sidebar. Groups appear in the order they are first used.
 const NAV: (NavItem & { permission: Permission })[] = [
   { label: "Dashboard", href: "/dashboard", icon: "dashboard", permission: "dashboard:view" },
   { label: "Employees", href: "/employees", icon: "employees", group: "Workforce", permission: "employees:read" },
@@ -18,13 +19,13 @@ const NAV: (NavItem & { permission: Permission })[] = [
   { label: "Leave", href: "/leave", icon: "leave", group: "Workforce", permission: "leave:approve" },
   { label: "Exceptions", href: "/exceptions", icon: "exceptions", group: "Workforce", permission: "attendance:read" },
   { label: "Payroll", href: "/payroll", icon: "payroll", group: "Workforce", permission: "payroll:manage" },
-  { label: "Locations", href: "/locations", icon: "locations", permission: "locations:read" },
-  { label: "QR Codes", href: "/qr-codes", icon: "qr", permission: "qr:manage" },
-  { label: "Clock devices", href: "/devices", icon: "devices", permission: "devices:manage" },
-  { label: "Integrations", href: "/integrations", icon: "integrations", permission: "integrations:manage" },
-  { label: "Reports", href: "/reports", icon: "reports", permission: "reports:read" },
-  { label: "Billing", href: "/billing", icon: "billing", permission: "settings:manage" },
-  { label: "Settings", href: "/settings", icon: "settings", permission: "settings:manage" },
+  { label: "Locations", href: "/locations", icon: "locations", group: "Clocking", permission: "locations:read" },
+  { label: "QR codes", href: "/qr-codes", icon: "qr", group: "Clocking", permission: "qr:manage" },
+  { label: "Clock devices", href: "/devices", icon: "devices", group: "Clocking", permission: "devices:manage" },
+  { label: "Reports", href: "/reports", icon: "reports", group: "Business", permission: "reports:read" },
+  { label: "Integrations", href: "/integrations", icon: "integrations", group: "Business", permission: "integrations:manage" },
+  { label: "Billing", href: "/billing", icon: "billing", group: "Business", permission: "settings:manage" },
+  { label: "Settings", href: "/settings", icon: "settings", group: "Business", permission: "settings:manage" },
 ];
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
@@ -52,7 +53,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     );
   }
 
-  const items = NAV.filter((n) => can(ctx.role, n.permission)).map(({ permission: _p, ...item }) => item);
+  const items = NAV.filter((n) => can(ctx.role, n.permission)).map(({ label, href, icon, group }) => ({ label, href, icon, group }));
   // Single entry point for platform operators; never rendered for anyone else.
   if (superAdmin) items.push({ label: "System portal", href: "/system", icon: "system", group: "Platform" });
 
@@ -91,7 +92,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             )}
           </div>
         )}
-        <main className="mx-auto w-full max-w-[1280px] px-5 py-8 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-5 sm:py-8 lg:px-8">{children}</main>
       </div>
     </div>
   );

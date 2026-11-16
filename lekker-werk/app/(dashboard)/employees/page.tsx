@@ -29,10 +29,10 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Se
   const p = await readParams(searchParams);
   const query = employeeListQuery.parse({
     q: p.get("q"),
-    locationId: p.get("locationId"),
+    locationId: p.uuid("locationId"),
     department: p.get("department"),
-    status: p.get("status"),
-    page: p.get("page"),
+    status: p.oneOf("status", ["ACTIVE", "INACTIVE"] as const),
+    page: p.page(),
   });
 
   const [result, locations, departments] = await Promise.all([

@@ -28,6 +28,7 @@ const leaveSvc = await import("@/server/time/leave.service");
 const closureSvc = await import("@/server/time/closures.service");
 const payrollSvc = await import("@/server/time/payroll.service");
 const termsSvc = await import("@/server/time/terms.service");
+const integrationSvc = await import("@/server/services/integration.service");
 const exceptionsSvc = await import("@/server/time/exceptions.service");
 
 type Ctx = Parameters<typeof employeeSvc.getEmployee>[0];
@@ -140,6 +141,7 @@ describe.skipIf(!a || !b)("tenant isolation", () => {
     await noData(["location"], () => closureSvc.listClosures(ctxA, B.location));
     await noData(["period"], () => payrollSvc.getPayPeriodReport(ctxA, B.period));
     await noData(["period"], () => payrollSvc.exportPayPeriod(ctxA, B.period, "lines"));
+    await noData(["period"], () => payrollSvc.buildPayPeriodExport(ctxA, B.period));
   });
 
   it("refuses changes to another tenant's records", async () => {
@@ -159,6 +161,8 @@ describe.skipIf(!a || !b)("tenant isolation", () => {
     await denied(["closure"], () => closureSvc.deleteClosure(ctxA, B.closure));
     await denied(["period"], () => payrollSvc.lockPayPeriod(ctxA, B.period, { force: true }));
     await denied(["period"], () => payrollSvc.reopenPayPeriod(ctxA, B.period, "isolation test"));
+    // Neither another tenant's period nor another tenant's integration can be used to send hours out.
+    await denied(["period"], () => integrationSvc.pushPayPeriod(ctxA, B.period, B.period));
     await denied(["absence", "leaveType"], () => exceptionsSvc.resolveAbsence(ctxA, B.absence, { leaveTypeId: B.leaveType }));
     await denied(["employee"], () =>
       termsSvc.setTerms(ctxA, B.employee, { effectiveFrom: "2026-01-01", payType: "HOURLY", contractedMinutesPerWeek: 2400, daysPerWeek: 5, overtimeEligible: true }),

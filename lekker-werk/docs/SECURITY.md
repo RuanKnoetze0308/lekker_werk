@@ -13,12 +13,15 @@ How LekkerWerk protects tenants' data, and what has to be done outside the code.
 | Two-step login | Optional TOTP + 10 backup codes for super admins. No session until the code is accepted; codes can't be replayed; 5 wrong codes / 15 min. | `server/services/two-step.service.ts`, System → Security |
 | Sessions | Random token, only its sha256 stored, httpOnly + SameSite=Lax cookie. 7 days max, 12 h idle (2 h for super admins). New token when a super admin enters/leaves a tenant; tenant access lapses after 1 h. | `server/auth/session.ts` |
 | CSRF | Same-origin check plus a double-submit token on every mutating request with a session. | `server/http/route.ts` |
-| Browser | Nonce-based CSP (no injected script can run), HSTS, `frame-ancestors 'none'`, `nosniff`, Referrer-Policy, Permissions-Policy. | `proxy.ts`, `lib/security-headers.ts` |
+| Browser | Nonce-based CSP (no injected script can run), HSTS, `frame-ancestors 'none'`, `nosniff`, Referrer-Policy, Permissions-Policy, Cross-Origin-Opener-Policy. | `proxy.ts`, `lib/security-headers.ts` |
 | Client IP | Read from the trusted end of `X-Forwarded-For` (`TRUSTED_PROXY_HOPS`), so rate limits and PayFast's IP check can't be spoofed. | `server/http/client-ip.ts` |
 | Secrets at rest | Integration credentials, bot tokens, QR secrets, TOTP secrets: AES-256-GCM (`APP_ENCRYPTION_KEY`). Device keys, reset tokens, backup codes: sha256. Card/PIN values: HMAC (`CREDENTIAL_HASH_KEY`). | `lib/crypto.ts`, `server/devices/credential-hash.ts` |
 | Clock terminals | Per-device bearer key; 10 unknown cards/PINs per 10 min, then paused and admins alerted. | `server/devices/device-ingest.ts` |
 | Webhooks | WhatsApp: HMAC signature of the raw body. Telegram: secret in the URL + secret header. PayFast: signature with passphrase, merchant id, source IP, PayFast's own validation, amount. | `server/channels/*`, `server/billing/payfast.ts` |
 | Outbound calls | Tenant-supplied URLs (integrations): https only, public addresses only, checked again at connect time (no DNS rebinding), no redirects, size and time limits. | `lib/ssrf.ts` |
+| Integration bridge | Optional outbound calls to your own integration backend (`INTEGRATION_BRIDGE_URL`): https only in production, HMAC-SHA256 signature over timestamp + body with a 32+ character shared secret, no redirects, 30 s timeout. The URL comes from the environment, never from a tenant. | `server/integrations/bridge.ts`, `docs/INTEGRATIONS.md` |
+| API responses | `Cache-Control: no-store` on every API response, so tenant data isn't kept by a browser or proxy. | `server/http/route.ts` |
+| Bad input | Pages ignore invalid ids, dates and page numbers in the URL and answer 404 for a record that doesn't exist or isn't yours, instead of failing. | `lib/page-utils.ts`, `server/http/page.ts` |
 | Exports | CSV cells starting with `= + - @` are neutralised so they can't run as spreadsheet formulas. | `lib/csv.ts` |
 | Errors | The browser never sees SQL, stack traces or secrets: a diagnostic code and a ref for the server log. | `server/http/route.ts`, `docs/ERROR_CODES.md` |
 | Audit | Every admin change, login, platform promotion and tenant entry is in `audit_logs`. `clock_events` can't be edited (database trigger). | `server/services/audit.service.ts` |
@@ -36,6 +39,9 @@ Do these once, then review them every few months.
 - [ ] **Dependencies:** `npm audit --omit=dev` is clean before each release.
 
 ## Known gaps / next steps
+
+- **Signup says when an email is already registered.** That is normal for a signup form, but it does let someone test whether an address has an account (5 tries per minute per IP). Once email works, switch to "check your inbox" for both cases.
+- **The integration bridge receives customers' credentials for the other system** in each request. Treat that backend as part of the trust boundary: https, no body logging, secret in a vault.
 
 - **Email isn't sent yet** (`sendEmail` is a stub), so password reset doesn't reach anyone in production, and signup emails aren't verified. Connect a provider (Resend, Postmark or SMTP), then add email verification.
 - **No "change password" screen.** Users created by an admin keep the temporary password until reset works.

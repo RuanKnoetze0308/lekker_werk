@@ -1,4 +1,6 @@
-// UI-safe metadata (no secrets, no server imports). Drives the Integrations settings forms.
+// UI-safe metadata (no secrets, no server imports). Drives the Integrations page and the connect
+// form: the fields listed here are exactly what a connector receives as config / credentials.
+// Whether a system is usable is decided by server/integrations/registry.ts, not here.
 
 export interface FieldDef {
   key: string;
@@ -19,7 +21,6 @@ export interface ProviderMeta {
   direction: "EXPORT_HOURS" | "IMPORT_HOURS";
   /** Among the five most used by South African SMEs (Oct 2026 survey of local sources). */
   saTop5: boolean;
-  implemented: boolean;
   configFields: FieldDef[];
   credentialFields: FieldDef[];
 }
@@ -32,7 +33,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["ACCOUNTING", "PAYROLL"],
     direction: "EXPORT_HOURS",
     saTop5: true,
-    implemented: false,
     configFields: [{ key: "tenant", label: "Business id", required: true }],
     credentialFields: [{ key: "apiKey", label: "API key", secret: true, required: true }],
   },
@@ -43,7 +43,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["ACCOUNTING", "PAYROLL"],
     direction: "EXPORT_HOURS",
     saTop5: true,
-    implemented: false,
     configFields: [{ key: "tenant", label: "Tenant id", required: true }],
     credentialFields: [
       { key: "clientId", label: "Client id", required: true },
@@ -57,7 +56,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["ACCOUNTING", "PAYROLL"],
     direction: "EXPORT_HOURS",
     saTop5: true,
-    implemented: false,
     configFields: [{ key: "realmId", label: "Realm / company id", required: true }],
     credentialFields: [
       { key: "clientId", label: "Client id", required: true },
@@ -71,7 +69,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["PAYROLL"],
     direction: "EXPORT_HOURS",
     saTop5: true,
-    implemented: false,
     configFields: [{ key: "clientId", label: "SimplePay client id", required: true }],
     credentialFields: [{ key: "apiKey", label: "API key", secret: true, required: true }],
   },
@@ -82,7 +79,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["PAYROLL", "HR"],
     direction: "EXPORT_HOURS",
     saTop5: true,
-    implemented: false,
     configFields: [{ key: "companyId", label: "Company id", required: true }],
     credentialFields: [
       { key: "clientId", label: "Client id", required: true },
@@ -96,7 +92,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["ERP", "PAYROLL"],
     direction: "IMPORT_HOURS",
     saTop5: false,
-    implemented: false,
     configFields: [
       { key: "apiUrl", label: "e.net / REST URL", required: true },
       { key: "company", label: "Company ID", required: true },
@@ -111,7 +106,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["ERP", "HR"],
     direction: "IMPORT_HOURS",
     saTop5: false,
-    implemented: true,
     configFields: [
       { key: "apiUrl", label: "Odoo URL", placeholder: "https://mycompany.odoo.com", required: true },
       { key: "database", label: "Database", required: true },
@@ -126,7 +120,6 @@ export const PROVIDER_CATALOG: ProviderMeta[] = [
     categories: ["ERP", "ACCOUNTING", "PAYROLL", "HR"],
     direction: "IMPORT_HOURS",
     saTop5: false,
-    implemented: true,
     configFields: [
       { key: "apiUrl", label: "API URL (https)", placeholder: "https://erp.example.com/api/hours", required: true },
       { key: "employeeKey", label: "Employee field name", placeholder: "employee_number" },

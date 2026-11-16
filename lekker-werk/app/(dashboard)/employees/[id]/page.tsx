@@ -3,6 +3,7 @@ import { Pencil } from "lucide-react";
 import { Badge, Card, EmptyState, PageHeader, StatCard, Table, Td, Th, statusTone } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/Button";
 import { readParams, type SearchParams } from "@/lib/page-utils";
+import { orNotFound, pageId } from "@/server/http/page";
 import { addDays, formatDateTime, formatMinutes, formatTime, isoWeekday, localDate } from "@/lib/time";
 import { can } from "@/server/auth/permissions";
 import { requirePageContext } from "@/server/auth/guards";
@@ -36,11 +37,11 @@ export default async function EmployeeProfilePage({
   searchParams: SearchParams;
 }) {
   const ctx = await requirePageContext("employees:read");
-  const { id } = await params;
+  const id = pageId((await params).id);
   const p = await readParams(searchParams);
-  const range = (p.get("range") as "day" | "week" | "month" | undefined) ?? "month";
+  const range = p.oneOf("range", ["day", "week", "month"] as const) ?? "month";
 
-  const { employee: e, locationName, locationTimezone: tz, managerName, extraLocations, accounts } = await getEmployee(ctx, id);
+  const { employee: e, locationName, locationTimezone: tz, managerName, extraLocations, accounts } = await orNotFound(getEmployee(ctx, id));
   const company = await getCompany(ctx);
 
   const today = localDate(new Date(), tz);

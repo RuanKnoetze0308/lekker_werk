@@ -73,6 +73,16 @@ export const env = {
       allowLocalLive: process.env.PAYFAST_ALLOW_LOCAL_LIVE === "1",
     };
   },
+  /**
+   * Optional: your own integration backend (e.g. a .NET API). Providers without a native
+   * connector are forwarded to it, signed with the shared secret. See docs/INTEGRATIONS.md.
+   */
+  get integrationBridge() {
+    return {
+      url: (process.env.INTEGRATION_BRIDGE_URL ?? "").trim().replace(/\/$/, ""),
+      secret: process.env.INTEGRATION_BRIDGE_SECRET ?? "",
+    };
+  },
   /** Where new integration requests are emailed for quoting. Optional. */
   get opsEmail() {
     return process.env.OPS_EMAIL ?? "";

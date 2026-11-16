@@ -157,7 +157,7 @@ export function DeviceActions({
     }
   }
 
-  const link = "text-xs font-medium hover:underline disabled:opacity-50";
+  const link = "whitespace-nowrap text-xs font-medium hover:underline disabled:opacity-50";
   return (
     <div className="flex justify-end gap-3">
       {canSimulate && enabled && (

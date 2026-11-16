@@ -8,11 +8,12 @@ import { decryptJson, encryptJson } from "@/lib/crypto";
 import { catalogByProvider } from "@/lib/integration-catalog";
 import { assertCan, type AuthContext } from "../auth/context";
 import { Errors } from "../errors";
-import { providers } from "../integrations/registry";
+import { getProvider, providerCapabilities } from "../integrations/registry";
 import type { ProviderSettings } from "../integrations/types";
 import { assertWithinPlan } from "../billing/billing.service";
 import { audit } from "./audit.service";
 import { notify } from "./notification.service";
+import { buildPayPeriodExport, recordIntegrationExport } from "../time/payroll.service";
 
 type IntegrationRow = typeof integrations.$inferSelect;
 
@@ -31,6 +32,7 @@ function toPublic(r: IntegrationRow) {
     lastFailedSyncAt: r.lastFailedSyncAt,
     lastError: r.lastError,
     nextSyncAt: r.nextSyncAt,
+    ...providerCapabilities(r.provider),
   };
 }
 
@@ -126,11 +128,14 @@ function settingsOf(row: IntegrationRow): ProviderSettings {
 
 export async function testIntegration(ctx: AuthContext, id: string) {
   const row = await load(ctx, id);
-  await providers[row.provider].testConnection(settingsOf(row));
+  await getProvider(row.provider).testConnection(settingsOf(row));
 }
 
 export async function requestSync(ctx: AuthContext, id: string) {
   const row = await load(ctx, id);
+  if (!getProvider(row.provider).fetchHours) {
+    throw Errors.invalid("This system only receives hours. Send a locked pay period to it from Payroll.");
+  }
   const [open] = await db
     .select({ id: integrationSyncs.id })
     .from(integrationSyncs)
@@ -200,8 +205,17 @@ async function processSync(syncId: string, integrationId: string, companyId: str
   const [row] = await db.select().from(integrations).where(eq(integrations.id, integrationId));
   try {
     if (!row) throw new Error("Integration missing");
-    const provider = providers[row.provider];
+    const provider = getProvider(row.provider);
     const now = new Date();
+    // Export-only systems (payroll) have nothing to pull: hours are pushed from Payroll instead.
+    if (!provider.fetchHours) {
+      if (providerCapabilities(row.provider).available) {
+        await db.update(integrationSyncs).set({ status: "SUCCEEDED", finishedAt: now, durationMs: 0, recordsImported: 0 }).where(eq(integrationSyncs.id, syncId));
+        await db.update(integrations).set({ lastError: null, nextSyncAt: new Date(now.getTime() + row.syncFrequencyMinutes * 60_000) }).where(eq(integrations.id, integrationId));
+        return true;
+      }
+      throw new Error("This connector is not available yet.");
+    }
     const from = new Date((row.lastSuccessfulSyncAt ?? new Date(now.getTime() - 30 * 86400_000)).getTime() - 86400_000);
     const hours = await provider.fetchHours(settingsOf(row), { from, to: now });
 
@@ -272,5 +286,53 @@ async function processSync(syncId: string, integrationId: string, companyId: str
       await notify({ companyId, type: "INTEGRATION_FAILED", title: `${row.name} sync failed`, body: message });
     }
     return false;
+  }
+}
+
+// ---- Export: push a locked pay period to a payroll / accounting system -------------------------
+
+/** Enabled integrations that can receive hours: the "Send to ..." choices on a locked pay period. */
+export async function listExportTargets(ctx: AuthContext) {
+  assertCan(ctx, "payroll:manage");
+  const rows = await db
+    .select({ id: integrations.id, name: integrations.name, provider: integrations.provider })
+    .from(integrations)
+    .where(and(eq(integrations.companyId, ctx.companyId), eq(integrations.enabled, true)))
+    .orderBy(integrations.name);
+  return rows.filter((r) => providerCapabilities(r.provider).canExport);
+}
+
+/**
+ * Sends the frozen totals of a locked period to one integration and records the export.
+ * The provider call happens first: if the other system refuses, nothing is recorded here.
+ */
+export async function pushPayPeriod(ctx: AuthContext, periodId: string, integrationId: string) {
+  assertCan(ctx, "payroll:manage");
+  const [row] = await db
+    .select()
+    .from(integrations)
+    .where(and(eq(integrations.id, integrationId), eq(integrations.companyId, ctx.companyId)));
+  if (!row) throw Errors.notFound("Integration");
+  if (!row.enabled) throw Errors.conflict("This integration is switched off.");
+  const provider = getProvider(row.provider);
+  if (!provider.pushHours) throw Errors.invalid("This system cannot receive hours.");
+
+  const payload = await buildPayPeriodExport(ctx, periodId);
+  if (!payload.lines.length) throw Errors.conflict("This period has no hours to send.");
+  try {
+    const result = await provider.pushHours(settingsOf(row), payload);
+    await recordIntegrationExport(ctx, periodId, {
+      integrationId: row.id,
+      provider: row.provider,
+      rowCount: payload.lines.length,
+      accepted: result.accepted,
+      reference: result.reference,
+    });
+    await db.update(integrations).set({ lastSuccessfulSyncAt: new Date(), lastError: null }).where(eq(integrations.id, row.id));
+    return { sent: payload.lines.length, accepted: result.accepted, reference: result.reference ?? null, name: row.name };
+  } catch (err) {
+    const message = (err instanceof Error ? err.message : "Unknown error").slice(0, 500);
+    await db.update(integrations).set({ lastFailedSyncAt: new Date(), lastError: message }).where(eq(integrations.id, row.id));
+    throw err;
   }
 }

@@ -10,8 +10,14 @@ import { rateLimit } from "../services/rate-limit.service";
 import { ConfigError, env } from "@/lib/env";
 import { clientIpFrom } from "./client-ip";
 
+/** API responses carry tenant data: never let a browser or proxy keep a copy. */
+function noStore<R extends Response>(res: R): R {
+  if (!res.headers.has("cache-control")) res.headers.set("cache-control", "no-store");
+  return res;
+}
+
 export function ok<T>(data: T, init?: ResponseInit) {
-  return NextResponse.json({ data }, init);
+  return noStore(NextResponse.json({ data }, init));
 }
 
 function toErrorResponse(err: unknown) {
@@ -103,9 +109,9 @@ export function route<P = Record<string, string>>(
           }
         }
       }
-      return await handler(req, ctx);
+      return noStore(await handler(req, ctx));
     } catch (err) {
-      return toErrorResponse(err);
+      return noStore(toErrorResponse(err));
     }
   };
 }

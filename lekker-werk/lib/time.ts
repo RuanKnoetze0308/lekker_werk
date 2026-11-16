@@ -90,3 +90,15 @@ export function formatTime(date: Date | string | null, timeZone: string): string
 export function minutesBetween(a: Date, b: Date): number {
   return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 }
+
+/** "2026-11-16" → "Mon, 16 Nov 2026" (a calendar date, so no timezone is involved). */
+export function formatDay(dateStr: string, opts: { weekday?: boolean; year?: boolean } = {}): string {
+  const { weekday = true, year = true } = opts;
+  return new Intl.DateTimeFormat("en-ZA", {
+    timeZone: "UTC",
+    weekday: weekday ? "short" : undefined,
+    day: "numeric",
+    month: "short",
+    year: year ? "numeric" : undefined,
+  }).format(new Date(`${dateStr}T00:00:00Z`));
+}

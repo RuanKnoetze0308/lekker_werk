@@ -31,8 +31,8 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: S
   const p = await readParams(searchParams);
   const [company, settings] = await Promise.all([getCompany(ctx), getSettings(ctx.companyId)]);
   const period = periodContaining(localDate(new Date(), company.timezone), settings.payroll);
-  const from = p.get("from") ?? period.start;
-  const to = p.get("to") ?? period.end;
+  const from = p.date("from") ?? period.start;
+  const to = p.date("to") ?? period.end;
 
   const [ex, types] = await Promise.all([listExceptions(ctx, from, to), listLeaveTypes(ctx)]);
   const canResolve = can(ctx.role, "leave:approve");

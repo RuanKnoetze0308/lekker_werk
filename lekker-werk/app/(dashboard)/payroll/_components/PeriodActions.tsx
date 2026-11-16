@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Unlock, Download } from "lucide-react";
+import { Lock, Unlock, Download, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, FormMessage, Input } from "@/components/ui/form";
@@ -13,7 +13,10 @@ export function PeriodActions({
   status,
   openItems,
   canReopen,
+  exportTargets = [],
 }: {
+  /** Connected payroll / accounting systems that can receive this period. */
+  exportTargets?: { id: string; name: string }[];
   id: string;
   status: "OPEN" | "LOCKED" | "EXPORTED";
   openItems: number;
@@ -24,6 +27,25 @@ export function PeriodActions({
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
+  const [sendMsg, setSendMsg] = useState<{ error?: string; success?: string }>({});
+
+  async function send(target: { id: string; name: string }) {
+    if (!confirm(`Send this pay period's hours to ${target.name}?`)) return;
+    setSending(target.id);
+    setSendMsg({});
+    try {
+      const out = await api<{ sent: number; accepted: number; reference: string | null }>(`/api/payroll/periods/${id}/push`, {
+        body: { integrationId: target.id },
+      });
+      setSendMsg({ success: `Sent ${out.sent} line${out.sent === 1 ? "" : "s"} to ${target.name}${out.reference ? ` (ref ${out.reference})` : ""}.` });
+      router.refresh();
+    } catch (err) {
+      setSendMsg({ error: err instanceof ApiError ? err.message : `Could not send to ${target.name}.` });
+    } finally {
+      setSending(null);
+    }
+  }
 
   async function lock() {
     setPending(true);
@@ -80,7 +102,17 @@ export function PeriodActions({
     <>
       <Button href={`/api/payroll/periods/${id}/export?format=lines`} icon={<Download className="size-4" />}>Export CSV</Button>
       <Button href={`/api/payroll/periods/${id}/export?format=wide`} variant="secondary-light">Spreadsheet CSV</Button>
+      {exportTargets.map((t) => (
+        <Button key={t.id} variant="ink" icon={<Send className="size-4" />} disabled={!!sending} onClick={() => send(t)}>
+          {sending === t.id ? "Sending…" : `Send to ${t.name}`}
+        </Button>
+      ))}
       {canReopen && <Button variant="secondary-light" icon={<Unlock className="size-4" />} onClick={reopen}>Reopen</Button>}
+      {(sendMsg.error || sendMsg.success) && (
+        <div className="w-full">
+          <FormMessage error={sendMsg.error} success={sendMsg.success} />
+        </div>
+      )}
     </>
   );
 }

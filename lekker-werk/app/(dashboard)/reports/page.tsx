@@ -15,9 +15,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   const p = await readParams(searchParams);
 
   const kind = (REPORTS.find((r) => r.kind === p.get("kind"))?.kind ?? "daily_attendance") as ReportKind;
-  const to = p.get("to") ?? localDate(new Date(), company.timezone);
-  const from = p.get("from") ?? addDays(to, -29);
-  const locationId = p.get("locationId");
+  const to = p.date("to") ?? localDate(new Date(), company.timezone);
+  const from = p.date("from") ?? addDays(to, -29);
+  const locationId = p.uuid("locationId");
   const department = p.get("department");
 
   const [locations, departments, result] = await Promise.all([

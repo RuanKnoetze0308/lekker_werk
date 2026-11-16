@@ -216,7 +216,11 @@ export async function resetPassword(token: string, password: string) {
   const passwordHash = await hashPassword(password);
   await db.transaction(async (tx) => {
     await tx.update(users).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, row.userId));
-    await tx.update(passwordResets).set({ usedAt: new Date() }).where(eq(passwordResets.id, row.id));
+    // Every outstanding link for this user dies with this one (an older email can't be replayed).
+    await tx
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResets.userId, row.userId), isNull(passwordResets.usedAt)));
     await tx.delete(sessions).where(eq(sessions.userId, row.userId)); // force re-login everywhere
   });
   const [u] = await db.select({ companyId: users.companyId }).from(users).where(eq(users.id, row.userId));
